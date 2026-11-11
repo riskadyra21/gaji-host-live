@@ -212,6 +212,19 @@ tr.total-row td{font-weight:800;background:#f8fafc}
       <div class="modal-actions" style="margin-top:12px">
         <button class="btn btn-secondary" id="btnCopyPerson">Salin Rekap Orang Ini</button>
       </div>
+      <div style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px">
+        <h3 style="margin:0 0 4px;font-size:15px">Rekap Periode</h3>
+        <p class="muted" style="margin:0 0 6px">Pilih tanggal mulai sampai tanggal selesai. Isi tanggal yang sama untuk rekap satu hari.</p>
+        <label for="poStart">Tanggal Mulai</label>
+        <input type="date" id="poStart" />
+        <label for="poEnd">Tanggal Selesai</label>
+        <input type="date" id="poEnd" />
+        <div class="stat-grid" id="poPeriodSummary" style="margin-top:14px"></div>
+        <p class="muted" id="poPeriodMsg" style="margin-top:8px"></p>
+        <div class="modal-actions" style="margin-top:12px">
+          <button class="btn btn-secondary" id="btnCopyPersonPeriod">Salin Rekap Periode Orang Ini</button>
+        </div>
+      </div>
     </div>
     <div class="card">
       <h2>Rincian per Tanggal</h2>
@@ -374,6 +387,22 @@ function hostMonthCalc(st,hostId,y,m){
   var host = hostById(st,hostId);
   var rate = host ? host.ratePerHour : 0;
   var ss = sessionsOfMonth(st,y,m).filter(function(s){ return s.hostId===hostId; });
+  var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
+  var base = Math.round(rate * hours);
+  var dates = [];
+  ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
+  var mealDays = 0, meal = 0;
+  dates.forEach(function(d){
+    var dc = hostDayCalc(st,hostId,d);
+    if (dc.meal > 0){ mealDays++; meal += dc.meal; }
+  });
+  var bonus = ss.reduce(function(a,s){ return a + sessionBonus(s.turnover); }, 0);
+  return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
+}
+function hostPeriodCalc(st,hostId,startDateStr,endDateStr){
+  var host = hostById(st,hostId);
+  var rate = host ? host.ratePerHour : 0;
+  var ss = st.sessions.filter(function(s){ return s.hostId===hostId && s.date>=startDateStr && s.date<=endDateStr; });
   var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
   var base = Math.round(rate * hours);
   var dates = [];
@@ -646,6 +675,10 @@ function renderPerOrang(){
   var mk = document.getElementById('poMonth').value;
   var sumEl = document.getElementById('poSummary');
   var daysEl = document.getElementById('poDays');
+  // Tanggal mulai periode mengikuti tanggal 1 bulan yang sedang ditampilkan.
+  var startEl = document.getElementById('poStart');
+  if (mk && (!startEl.value || startEl.value.slice(0,7) !== mk)){ startEl.value = mk + '-01'; }
+  renderPerOrangPeriod();
   if (!hostId || !mk){
     sumEl.innerHTML = '';
     daysEl.innerHTML = '<p class="muted">Pilih host dan bulan.</p>';
@@ -687,6 +720,28 @@ function renderPerOrang(){
       det.style.display = det.style.display === 'none' ? 'block' : 'none';
     });
   });
+}
+function renderPerOrangPeriod(){
+  var hostId = document.getElementById('poHost').value;
+  var start = document.getElementById('poStart').value;
+  var end = document.getElementById('poEnd').value;
+  var sumEl = document.getElementById('poPeriodSummary');
+  var msgEl = document.getElementById('poPeriodMsg');
+  if (!hostId || !start || !end){ sumEl.innerHTML = ''; msgEl.textContent = ''; return; }
+  if (start > end){
+    sumEl.innerHTML = '';
+    msgEl.textContent = 'Tanggal mulai tidak boleh setelah tanggal selesai.';
+    return;
+  }
+  msgEl.textContent = '';
+  var c = hostPeriodCalc(state, hostId, start, end);
+  sumEl.innerHTML =
+    statBox('Total Jam', fmtHours(c.hours)) +
+    statBox('Gaji Pokok', fmtRp(c.base)) +
+    statBox('Hari Uang Makan', c.mealDays + ' hari') +
+    statBox('Total Uang Makan', fmtRp(c.meal)) +
+    statBox('Total Bonus', fmtRp(c.bonus)) +
+    statBox('Total Gaji', fmtRp(c.total));
 }
 
 /* --- Rekap --- */
@@ -813,6 +868,32 @@ function buildPersonText(hostId, y, m){
   lines.push('Total Jam: ' + fmtHours(c.hours));
   lines.push('Gaji Pokok: ' + fmtRp(c.base));
   lines.push('Uang Makan (' + c.mealDays + ' hari): ' + fmtRp(c.meal));
+  lines.push('Bonus: ' + fmtRp(c.bonus));
+  lines.push('Total Gaji: ' + fmtRp(c.total));
+  return lines.join('\n');
+}
+function fmtPeriodTitle(startDateStr, endDateStr){
+  if (startDateStr === endDateStr) return fmtDateID(startDateStr);
+  var a = startDateStr.split('-'), b = endDateStr.split('-');
+  if (a[0] === b[0] && a[1] === b[1]){
+    return parseInt(a[2],10) + '–' + parseInt(b[2],10) + ' ' + MONTH_NAMES[parseInt(a[1],10)-1] + ' ' + a[0];
+  }
+  if (a[0] === b[0]){
+    return parseInt(a[2],10) + ' ' + MONTH_NAMES[parseInt(a[1],10)-1] + '–' + fmtDateID(endDateStr);
+  }
+  return fmtDateID(startDateStr) + '–' + fmtDateID(endDateStr);
+}
+function buildPersonPeriodText(hostId, startDateStr, endDateStr){
+  var h = hostById(state, hostId);
+  if (!h) return '';
+  var c = hostPeriodCalc(state, hostId, startDateStr, endDateStr);
+  var lines = [];
+  lines.push('📋 REKAP GAJI — ' + h.name + ' (' + fmtPeriodTitle(startDateStr, endDateStr) + ')');
+  lines.push('Tarif: ' + fmtRp(h.ratePerHour) + '/jam');
+  lines.push('Total Jam: ' + fmtHours(c.hours));
+  lines.push('Gaji Pokok: ' + fmtRp(c.base));
+  if (c.mealDays > 0){ lines.push('Uang Makan (' + c.mealDays + ' hari): ' + fmtRp(c.meal)); }
+  else { lines.push('Uang Makan: Rp 0'); }
   lines.push('Bonus: ' + fmtRp(c.bonus));
   lines.push('Total Gaji: ' + fmtRp(c.total));
   return lines.join('\n');
@@ -1389,6 +1470,10 @@ function initUI(){
   document.getElementById('poHost').addEventListener('change', renderPerOrang);
   document.getElementById('poMonth').addEventListener('change', renderPerOrang);
   document.getElementById('poMonth').value = monthStr(now.getFullYear(), now.getMonth()+1);
+  document.getElementById('poStart').addEventListener('change', renderPerOrangPeriod);
+  document.getElementById('poEnd').addEventListener('change', renderPerOrangPeriod);
+  document.getElementById('poStart').value = monthStr(now.getFullYear(), now.getMonth()+1) + '-01';
+  document.getElementById('poEnd').value = todayStr();
   document.getElementById('rkMonth').addEventListener('change', renderRekap);
   document.getElementById('rkMonth').value = monthStr(now.getFullYear(), now.getMonth()+1);
   document.getElementById('btnExcel').addEventListener('click', downloadExcel);
@@ -1409,6 +1494,14 @@ function initUI(){
     if (!hostId || !mk){ alert('Pilih host dan bulan dulu.'); return; }
     var p = parseMonthKey(mk);
     copyText(buildPersonText(hostId, p.y, p.m), document.getElementById('btnCopyPerson'));
+  });
+  document.getElementById('btnCopyPersonPeriod').addEventListener('click', function(){
+    var hostId = document.getElementById('poHost').value;
+    var start = document.getElementById('poStart').value;
+    var end = document.getElementById('poEnd').value;
+    if (!hostId || !start || !end){ alert('Pilih host dan periode dulu.'); return; }
+    if (start > end){ alert('Tanggal mulai tidak boleh setelah tanggal selesai.'); return; }
+    copyText(buildPersonPeriodText(hostId, start, end), document.getElementById('btnCopyPersonPeriod'));
   });
   document.getElementById('hostForm').addEventListener('submit', onSaveHost);
   document.getElementById('hostCancelBtn').addEventListener('click', cancelEditHost);
