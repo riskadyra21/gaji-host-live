@@ -27,6 +27,9 @@ section.tab-page.active{display:block}
 label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px;color:#334155}
 input,select{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;background:#fff}
 input:focus,select:focus{outline:2px solid var(--primary);border-color:var(--primary)}
+.dur-row{display:flex;gap:10px}
+.dur-row>div{flex:1}
+.dur-row label{display:block;font-size:13px;font-weight:600;margin:0 0 4px;color:#334155}
 .btn{display:inline-block;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:11px 18px;font-size:15px;font-weight:600;cursor:pointer;margin-top:12px}
 .btn:hover{background:var(--primary-dark)}
 .btn-secondary{background:#fff;color:var(--primary);border:1px solid var(--primary)}
@@ -107,8 +110,17 @@ tr.total-row td{font-weight:800;background:#f8fafc}
         <select id="fAccount" required></select>
         <label for="fDate">Tanggal</label>
         <input type="date" id="fDate" required />
-        <label for="fHours">Total Jam (kelipatan 0,5 — contoh: 1,5 / 2 / 2,5 / 4)</label>
-        <input type="number" id="fHours" step="0.5" min="0.5" placeholder="2" required />
+        <label>Lama Sesi</label>
+        <div class="dur-row">
+          <div>
+            <label for="fHours">Jam</label>
+            <input type="number" id="fHours" min="0" step="1" placeholder="6" required />
+          </div>
+          <div>
+            <label for="fMinutes">Menit</label>
+            <input type="number" id="fMinutes" min="0" max="59" step="1" placeholder="30" />
+          </div>
+        </div>
         <label for="fTurnover">Omset Sesi (Rp)</label>
         <input type="number" id="fTurnover" min="0" step="1" placeholder="0" required />
         <p class="muted" id="bonusPreview">Bonus sesi ini: Rp 0</p>
@@ -234,7 +246,14 @@ function fmtDateID(dateStr){
   var p = dateStr.split('-');
   return parseInt(p[2],10) + ' ' + MONTH_NAMES[parseInt(p[1],10)-1] + ' ' + p[0];
 }
-function fmtHours(h){ return String(h).replace('.', ',') + ' jam'; }
+function fmtHours(h){
+  var totalMin = Math.round(h * 60);
+  var hh = Math.floor(totalMin / 60);
+  var mm = totalMin % 60;
+  if (hh > 0 && mm > 0) return hh + ' jam ' + mm + ' menit';
+  if (hh > 0) return hh + ' jam';
+  return mm + ' menit';
+}
 function parseNum(v){ if (v===null||v===undefined||v==='') return NaN; return parseFloat(String(v).replace(',', '.')); }
 function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
@@ -403,14 +422,18 @@ function onSaveSession(e){
   var hostId = document.getElementById('fHost').value;
   var accountId = document.getElementById('fAccount').value;
   var date = document.getElementById('fDate').value;
-  var hours = parseNum(document.getElementById('fHours').value);
+  var jam = parseNum(document.getElementById('fHours').value);
+  var menit = parseNum(document.getElementById('fMinutes').value);
+  if (isNaN(menit)) menit = 0;
   var turnover = parseNum(document.getElementById('fTurnover').value);
   var editId = document.getElementById('fEditId').value;
   if (!hostId){ alert('Pilih host dulu.'); return; }
   if (!accountId){ alert('Pilih akun dulu.'); return; }
   if (!date){ alert('Isi tanggal.'); return; }
-  if (isNaN(hours) || hours <= 0){ alert('Total jam harus diisi angka lebih dari 0.'); return; }
-  if (Math.abs(hours*2 - Math.round(hours*2)) > 1e-9){ alert('Total jam harus kelipatan 0,5 (contoh: 1,5 / 2 / 2,5 / 4).'); return; }
+  if (isNaN(jam) || jam < 0){ alert('Isi jam sesi (angka 0 atau lebih).'); return; }
+  if (menit < 0 || menit > 59){ alert('Menit harus antara 0 dan 59.'); return; }
+  var hours = jam + menit / 60;
+  if (hours <= 0){ alert('Lama sesi harus lebih dari 0.'); return; }
   if (isNaN(turnover) || turnover < 0){ alert('Omset harus diisi angka 0 atau lebih.'); return; }
   turnover = Math.round(turnover);
   if (editId){
@@ -422,6 +445,7 @@ function onSaveSession(e){
   saveState();
   cancelEditSession();
   document.getElementById('fHours').value = '';
+  document.getElementById('fMinutes').value = '';
   document.getElementById('fTurnover').value = '';
   updateBonusPreview();
   renderAll();
@@ -432,7 +456,10 @@ function editSession(id){
   document.getElementById('fHost').value = s.hostId;
   document.getElementById('fAccount').value = s.accountId;
   document.getElementById('fDate').value = s.date;
-  document.getElementById('fHours').value = s.hours;
+  document.getElementById('fHours').value = Math.floor(s.hours);
+  var edMin = Math.round((s.hours - Math.floor(s.hours)) * 60);
+  if (edMin === 60){ document.getElementById('fHours').value = Math.floor(s.hours) + 1; edMin = 0; }
+  document.getElementById('fMinutes').value = edMin;
   document.getElementById('fTurnover').value = s.turnover;
   document.getElementById('fEditId').value = id;
   document.getElementById('formTitle').textContent = 'Ubah Sesi';
