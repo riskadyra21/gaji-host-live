@@ -85,6 +85,12 @@ tr.total-row td{font-weight:800;background:#f8fafc}
 .login-card{background:#fff;border:1px solid var(--border);border-radius:16px;max-width:440px;width:100%;padding:28px 24px;text-align:center;box-shadow:0 4px 24px rgba(15,23,42,.08)}
 .login-card h1{margin:0 0 6px;font-size:22px}
 .login-card .sub{color:var(--muted);font-size:14px;margin:0 0 20px}
+.login-features{list-style:none;margin:0 0 20px;padding:0;text-align:left;font-size:14px}
+.login-features li{padding:5px 0 5px 26px;position:relative}
+.login-features li::before{content:"✓";position:absolute;left:4px;color:var(--green);font-weight:700}
+.login-links{margin:16px 0 0;font-size:13px;color:var(--muted)}
+.login-links a{color:var(--primary);text-decoration:none}
+.login-links a:hover{text-decoration:underline}
 .google-btn{display:inline-flex;align-items:center;gap:10px;background:#fff;border:1px solid #dadce0;border-radius:8px;padding:11px 20px;font-size:15px;font-weight:600;color:#1f1f1f;cursor:pointer}
 .google-btn:hover{background:#f8f9fa}
 .google-btn .g{font-size:19px;font-weight:800;color:#4285F4}
@@ -104,9 +110,16 @@ tr.total-row td{font-weight:800;background:#f8fafc}
 <div id="loginScreen" class="login-screen">
   <div class="login-card">
     <h1>Gaji Host Live</h1>
-    <p class="sub">Hitung gaji host live TikTok — pokok, uang makan, dan bonus omset.<br/>Login dulu dengan akun Google kamu. Datamu tersimpan di Google Sheet milikmu sendiri.</p>
+    <p class="sub">Aplikasi penghitung gaji host live TikTok — gaji pokok, uang makan, dan bonus omset dihitung otomatis, dan tersimpan di Google Sheet milikmu sendiri.</p>
+    <ul class="login-features">
+      <li>Hitung gaji otomatis: gaji pokok per jam, uang makan Rp10.000/hari bila total jam hari itu &ge; 6 jam, dan bonus 0,5% dari omset sesi &ge; Rp5.000.000.</li>
+      <li>Kalender dan rekap gaji bulanan per host dan per akun TikTok.</li>
+      <li>Unduh rekap sebagai Excel (.xlsx) dan PDF mingguan atau bulanan.</li>
+      <li>Data tersimpan di Google Sheet milikmu sendiri — bukan di server kami.</li>
+    </ul>
     <button class="google-btn" id="btnGoogleLogin" type="button"><span class="g">G</span> Login dengan Google</button>
     <p class="muted" id="loginMsg" style="margin-top:14px"></p>
+    <p class="login-links">Login dengan akun Google untuk memakai aplikasi.<br/><a href="/privacy.html">Kebijakan Privasi</a> &middot; <a href="/terms.html">Ketentuan Penggunaan</a></p>
   </div>
 </div>
 <div id="appShell" style="display:none">
