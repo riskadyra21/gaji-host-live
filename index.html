@@ -227,7 +227,7 @@ tr.total-row td{font-weight:800;background:#f8fafc}
       </div>
     </div>
     <div class="card">
-      <h2>Rincian per Tanggal</h2>
+      <h2 id="poDaysTitle">Rincian per Tanggal</h2>
       <div id="poDays"></div>
     </div>
   </section>
@@ -734,7 +734,7 @@ function renderCalDetail(dateStr){
       html += '<div class="day-row" style="cursor:default"><div class="top"><span>' + escapeHtml(ph.host.name) + '</span><span class="money">' + fmtRp(ph.total) + '</span></div>'
         + '<div class="sub">' + fmtHours(ph.hours) + ' • Pokok ' + fmtRp(ph.base) + ' • Uang makan ' + fmtRp(ph.meal) + ' • Bonus ' + fmtRp(ph.bonus) + '</div>';
       ph.sessions.forEach(function(s){
-        html += '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) +  + '</div>';
+        html += '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + '</div>';
       });
       html += '</div>';
     });
@@ -753,14 +753,24 @@ function renderPerOrang(){
   var hostId = document.getElementById('poHost').value;
   var mk = document.getElementById('poMonth').value;
   var sumEl = document.getElementById('poSummary');
-  var daysEl = document.getElementById('poDays');
   // Tanggal mulai periode mengikuti tanggal 1 bulan yang sedang ditampilkan.
   var startEl = document.getElementById('poStart');
+  var endEl = document.getElementById('poEnd');
   if (mk && (!startEl.value || startEl.value.slice(0,7) !== mk)){ startEl.value = mk + '-01'; }
+  if (mk){
+    // Tanggal selesai mengikuti bulan yang ditampilkan: tanggal terakhir
+    // bulan itu bila bulan sudah lewat, hari ini bila bulan berjalan.
+    var p0 = parseMonthKey(mk);
+    var lastDay = new Date(p0.y, p0.m, 0).getDate();
+    var lastDayStr = mk + '-' + pad2(lastDay);
+    var curMonth = todayStr().slice(0,7);
+    var wantEnd = (mk < curMonth) ? lastDayStr : (mk === curMonth ? todayStr() : lastDayStr);
+    if (!endEl.value || endEl.value.slice(0,7) !== mk || endEl.value < startEl.value){ endEl.value = wantEnd; }
+  }
   renderPerOrangPeriod();
+  renderPerOrangDays();
   if (!hostId || !mk){
     sumEl.innerHTML = '';
-    daysEl.innerHTML = '<p class="muted">Pilih host dan bulan.</p>';
     return;
   }
   var p = parseMonthKey(mk);
@@ -772,6 +782,25 @@ function renderPerOrang(){
     statBox('Total Uang Makan', fmtRp(c.meal)) +
     statBox('Total Bonus', fmtRp(c.bonus)) +
     statBox('Total Gaji', fmtRp(c.total));
+}
+function renderPerOrangDays(){
+  var hostId = document.getElementById('poHost').value;
+  var mk = document.getElementById('poMonth').value;
+  var daysEl = document.getElementById('poDays');
+  var titleEl = document.getElementById('poDaysTitle');
+  var start = document.getElementById('poStart').value;
+  var end = document.getElementById('poEnd').value;
+  // Judul bagian mengikuti periode yang dipilih.
+  if (titleEl){
+    titleEl.textContent = (start && end && start <= end)
+      ? 'Rincian per Tanggal (' + fmtPeriodTitle(start, end) + ')'
+      : 'Rincian per Tanggal';
+  }
+  if (!hostId || !mk){
+    daysEl.innerHTML = '<p class="muted">Pilih host dan bulan.</p>';
+    return;
+  }
+  var p = parseMonthKey(mk);
   var ss = sessionsOfMonth(state, p.y, p.m).filter(function(s){ return s.hostId===hostId; });
   var dates = [];
   ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
@@ -780,6 +809,18 @@ function renderPerOrang(){
     daysEl.innerHTML = '<p class="muted">Belum ada sesi untuk host ini di bulan ini.</p>';
     return;
   }
+  // Rincian hanya menampilkan tanggal di dalam periode yang dipilih.
+  if (start && end){
+    if (start > end){
+      daysEl.innerHTML = '<p class="muted">Tanggal mulai tidak boleh setelah tanggal selesai.</p>';
+      return;
+    }
+    dates = dates.filter(function(d){ return d >= start && d <= end; });
+    if (dates.length === 0){
+      daysEl.innerHTML = '<p class="muted">Tidak ada sesi untuk host ini pada periode ini.</p>';
+      return;
+    }
+  }
   var html = '';
   dates.forEach(function(d){
     var dc = hostDayCalc(state, hostId, d);
@@ -787,7 +828,7 @@ function renderPerOrang(){
       + '<div class="sub">' + fmtHours(dc.hours) + ' • Pokok ' + fmtRp(dc.base) + ' • Uang makan ' + fmtRp(dc.meal) + ' • Bonus ' + fmtRp(dc.bonus) + '</div>'
       + '<div class="day-detail" style="display:none">'
       + dc.sessions.map(function(s){
-          return '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) +  + '</div>';
+          return '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + '</div>';
         }).join('')
       + '<div class="sess" style="font-weight:600">Total hari itu: ' + fmtRp(dc.total) + '</div>'
       + '</div></div>';
@@ -1688,8 +1729,8 @@ function initUI(){
   document.getElementById('poHost').addEventListener('change', renderPerOrang);
   document.getElementById('poMonth').addEventListener('change', renderPerOrang);
   document.getElementById('poMonth').value = monthStr(now.getFullYear(), now.getMonth()+1);
-  document.getElementById('poStart').addEventListener('change', renderPerOrangPeriod);
-  document.getElementById('poEnd').addEventListener('change', renderPerOrangPeriod);
+  document.getElementById('poStart').addEventListener('change', function(){ renderPerOrangPeriod(); renderPerOrangDays(); });
+  document.getElementById('poEnd').addEventListener('change', function(){ renderPerOrangPeriod(); renderPerOrangDays(); });
   document.getElementById('poStart').value = monthStr(now.getFullYear(), now.getMonth()+1) + '-01';
   document.getElementById('poEnd').value = todayStr();
   document.getElementById('rkMonth').addEventListener('change', renderRekap);
