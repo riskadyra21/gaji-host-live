@@ -229,6 +229,9 @@ tr.total-row td{font-weight:800;background:#f8fafc}
     <div class="card">
       <h2 id="poDaysTitle">Rincian per Tanggal</h2>
       <div id="poDays"></div>
+      <div class="modal-actions" style="margin-top:12px">
+        <button class="btn btn-secondary" id="btnCopyPersonDays">Salin Rincian per Tanggal</button>
+      </div>
     </div>
   </section>
 
@@ -1018,6 +1021,40 @@ function buildPersonPeriodText(hostId, startDateStr, endDateStr){
   lines.push('Total Gaji: ' + fmtRp(c.total));
   return lines.join('\n');
 }
+function buildPersonDaysText(hostId, y, m, startDateStr, endDateStr){
+  var h = hostById(state, hostId);
+  if (!h) return '';
+  var ss = sessionsOfMonth(state, y, m).filter(function(s){ return s.hostId===hostId; });
+  var dates = [];
+  ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
+  dates.sort();
+  var title = (startDateStr && endDateStr && startDateStr <= endDateStr)
+    ? fmtPeriodTitle(startDateStr, endDateStr)
+    : MONTH_NAMES[m-1] + ' ' + y;
+  var lines = [];
+  lines.push('📋 RINCIAN PER TANGGAL — ' + h.name + ' (' + title + ')');
+  lines.push('Tarif: ' + fmtRp(h.ratePerHour) + '/jam');
+  lines.push('');
+  if (startDateStr && endDateStr){
+    if (startDateStr > endDateStr){ return 'Tanggal mulai tidak boleh setelah tanggal selesai.'; }
+    dates = dates.filter(function(d){ return d >= startDateStr && d <= endDateStr; });
+  }
+  if (dates.length === 0){ lines.push('Tidak ada sesi pada periode ini.'); return lines.join('\n'); }
+  var tot = 0;
+  dates.forEach(function(d){
+    var dc = hostDayCalc(state, hostId, d);
+    lines.push(fmtDateID(d) + ' — ' + fmtRp(dc.total));
+    lines.push(fmtHours(dc.hours) + ' • Pokok ' + fmtRp(dc.base) + ' • Uang makan ' + fmtRp(dc.meal) + ' • Bonus ' + fmtRp(dc.bonus));
+    dc.sessions.forEach(function(s){
+      lines.push('• ' + accountName(s.accountId) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover));
+    });
+    lines.push('Total hari itu: ' + fmtRp(dc.total));
+    lines.push('');
+    tot += dc.total;
+  });
+  lines.push('💰 TOTAL: ' + fmtRp(tot));
+  return lines.join('\n');
+}
 function fallbackCopy(txt){
   var ta = document.createElement('textarea');
   ta.value = txt;
@@ -1761,6 +1798,16 @@ function initUI(){
     if (!hostId || !start || !end){ alert('Pilih host dan periode dulu.'); return; }
     if (start > end){ alert('Tanggal mulai tidak boleh setelah tanggal selesai.'); return; }
     copyText(buildPersonPeriodText(hostId, start, end), document.getElementById('btnCopyPersonPeriod'));
+  });
+  document.getElementById('btnCopyPersonDays').addEventListener('click', function(){
+    var hostId = document.getElementById('poHost').value;
+    var mk = document.getElementById('poMonth').value;
+    if (!hostId || !mk){ alert('Pilih host dan bulan dulu.'); return; }
+    var p = parseMonthKey(mk);
+    var start = document.getElementById('poStart').value;
+    var end = document.getElementById('poEnd').value;
+    if (start && end && start > end){ alert('Tanggal mulai tidak boleh setelah tanggal selesai.'); return; }
+    copyText(buildPersonDaysText(hostId, p.y, p.m, start, end), document.getElementById('btnCopyPersonDays'));
   });
   document.getElementById('hostForm').addEventListener('submit', onSaveHost);
   document.getElementById('hostCancelBtn').addEventListener('click', cancelEditHost);
