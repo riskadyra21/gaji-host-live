@@ -112,7 +112,7 @@ tr.total-row td{font-weight:800;background:#f8fafc}
     <h1>Gaji Host Live</h1>
     <p class="sub">Aplikasi penghitung gaji host live TikTok — gaji pokok, uang makan, dan bonus omset dihitung otomatis, dan tersimpan di Google Sheet milikmu sendiri.</p>
     <ul class="login-features">
-      <li>Hitung gaji otomatis: gaji pokok per jam, uang makan Rp10.000/hari bila total jam hari itu &ge; 6 jam, dan bonus 0,5% dari omset sesi &ge; Rp5.000.000.</li>
+      <li>Hitung gaji otomatis: gaji pokok per jam, uang makan Rp10.000/hari bila total jam hari itu &ge; 6 jam, dan bonus <span id="loginBonusPct">0,5%</span> dari omset sesi &ge; Rp5.000.000.</li>
       <li>Kalender dan rekap gaji bulanan per host dan per akun TikTok.</li>
       <li>Unduh rekap sebagai Excel (.xlsx) dan PDF mingguan atau bulanan.</li>
       <li>Data tersimpan di Google Sheet milikmu sendiri — bukan di server kami.</li>
@@ -173,7 +173,7 @@ tr.total-row td{font-weight:800;background:#f8fafc}
         <button type="submit" class="btn" id="saveBtn">Simpan Sesi</button>
         <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display:none">Batal Ubah</button>
       </form>
-      <p class="muted" style="margin-top:10px">Bonus: omset &ge; Rp 5.000.000 &rarr; 0,5% &times; omset. Di bawah itu bonus Rp 0. Uang makan Rp 10.000/hari bila total jam host hari itu &ge; 6 jam.</p>
+      <p class="muted" style="margin-top:10px">Bonus: omset &ge; Rp 5.000.000 &rarr; <span id="formBonusPct">0,5%</span> &times; omset. Di bawah itu bonus Rp 0. Uang makan Rp 10.000/hari bila total jam host hari itu &ge; 6 jam.</p>
     </div>
     <div class="card">
       <h2>Sesi Terbaru</h2>
@@ -274,6 +274,15 @@ tr.total-row td{font-weight:800;background:#f8fafc}
       <div id="hostList" style="margin-top:14px"></div>
     </div>
     <div class="card">
+      <h2>Pengaturan Bonus</h2>
+      <form id="bonusForm">
+        <label for="bonusPctInput">Persentase Bonus (%)</label>
+        <input type="text" id="bonusPctInput" inputmode="decimal" placeholder="0,5" />
+        <p class="muted">Bonus per sesi = persentase &times; omset, bila omset sesi &ge; Rp 5.000.000. Di bawah itu bonus Rp 0. Berlaku untuk semua host.</p>
+        <button type="submit" class="btn" id="bonusSaveBtn">Simpan Persentase Bonus</button>
+      </form>
+    </div>
+    <div class="card">
       <h2>Akun</h2>
       <form id="accountForm">
         <label for="aName">Nama Akun</label>
@@ -289,6 +298,7 @@ tr.total-row td{font-weight:800;background:#f8fafc}
 </main>
 </div>
 <div class="modal-overlay" id="slipModal"><div class="modal-card slip" id="slipContent"></div></div>
+<div class="modal-overlay" id="choiceModal"><div class="modal-card" id="choiceContent"></div></div>
 
 <script>
 'use strict';
@@ -305,7 +315,8 @@ var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapi
 var MEAL_MIN_HOURS = 6;
 var MEAL_AMOUNT = 10000;
 var BONUS_MIN_TURNOVER = 5000000;
-var BONUS_RATE = 0.005;
+var BONUS_RATE = 0.005; /* persen bonus bawaan (0,5%) bila belum ada pengaturan */
+var BONUS_PCT_LS_KEY = 'gaji-host-live-bonus-pct';
 var MONTH_NAMES = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
 var DAY_NAMES = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
 
@@ -338,7 +349,7 @@ function parseNum(v){ if (v===null||v===undefined||v==='') return NaN; return pa
 function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 /* ===== State (localStorage) ===== */
-function defaultState(){ return { hosts: [], accounts: [{id: uid(), name: 'Dozer.Store25'}], sessions: [] }; }
+function defaultState(){ return { hosts: [], accounts: [{id: uid(), name: 'Dozer.Store25'}], sessions: [], bonusPct: BONUS_RATE }; }
 function loadState(){
   try{
     if (typeof localStorage === 'undefined') return defaultState();
@@ -349,6 +360,7 @@ function loadState(){
     if (!Array.isArray(s.hosts)) s.hosts = [];
     if (!Array.isArray(s.accounts) || s.accounts.length === 0) s.accounts = defaultState().accounts;
     if (!Array.isArray(s.sessions)) s.sessions = [];
+    if (typeof s.bonusPct !== 'number' || isNaN(s.bonusPct) || s.bonusPct < 0 || s.bonusPct > 1) s.bonusPct = BONUS_RATE;
     return s;
   }catch(e){ return defaultState(); }
 }
@@ -362,9 +374,42 @@ function saveState(){
 /* ===== Perhitungan (fungsi murni — bisa diuji) ===== */
 function hostById(st,id){ return st.hosts.find(function(x){return x.id===id;}) || null; }
 function accountById(st,id){ return st.accounts.find(function(x){return x.id===id;}) || null; }
-function sessionBonus(turnover){
+/* Persen bonus yang sedang berlaku (fraksi, mis. 0,005 = 0,5%). */
+function bonusPctOf(st){
+  var v = st && typeof st.bonusPct === 'number' ? st.bonusPct : NaN;
+  if (isNaN(v) || v < 0 || v > 1) return BONUS_RATE;
+  return v;
+}
+function sessionBonusWithPct(turnover, pct){
   turnover = Number(turnover) || 0;
-  return turnover >= BONUS_MIN_TURNOVER ? Math.round(turnover * BONUS_RATE) : 0;
+  pct = (typeof pct === 'number' && !isNaN(pct) && pct >= 0) ? pct : BONUS_RATE;
+  return turnover >= BONUS_MIN_TURNOVER ? Math.round(turnover * pct) : 0;
+}
+/* Bonus memakai persen bonus yang sedang berlaku (untuk sesi baru / pratinjau). */
+function sessionBonus(turnover){
+  return sessionBonusWithPct(turnover, bonusPctOf(state));
+}
+/* Tarif yang dipakai sebuah sesi: snapshot sesi bila ada, kalau tidak tarif host saat ini. */
+function sessionRateOf(st, s){
+  if (s && typeof s.rate === 'number' && !isNaN(s.rate) && s.rate > 0) return s.rate;
+  var h = s ? hostById(st, s.hostId) : null;
+  return h ? h.ratePerHour : 0;
+}
+/* Persen bonus yang dipakai sebuah sesi: snapshot sesi bila ada, kalau tidak pengaturan saat ini. */
+function sessionBonusPctOf(st, s){
+  if (s && typeof s.bonusPct === 'number' && !isNaN(s.bonusPct) && s.bonusPct >= 0) return s.bonusPct;
+  return bonusPctOf(st);
+}
+function sessionBonusOf(st, s){
+  return sessionBonusWithPct(s.turnover, sessionBonusPctOf(st, s));
+}
+function fmtPct(pct){
+  var v = Math.round(pct * 10000) / 100;
+  return String(v).replace('.', ',') + '%';
+}
+function fmtPctNum(pct){
+  var v = Math.round(pct * 10000) / 100;
+  return String(v).replace('.', ',');
 }
 function sessionsOfMonth(st,y,m){
   var p = y + '-' + pad2(m);
@@ -374,21 +419,17 @@ function hostSessionsOn(st,hostId,date){
   return st.sessions.filter(function(s){ return s.hostId===hostId && s.date===date; });
 }
 function hostDayCalc(st,hostId,date){
-  var host = hostById(st,hostId);
-  var rate = host ? host.ratePerHour : 0;
   var ss = hostSessionsOn(st,hostId,date);
   var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
-  var base = Math.round(rate * hours);
+  var base = ss.reduce(function(a,s){ return a + Math.round(sessionRateOf(st,s) * Number(s.hours)); }, 0);
   var meal = hours >= MEAL_MIN_HOURS ? MEAL_AMOUNT : 0;
-  var bonus = ss.reduce(function(a,s){ return a + sessionBonus(s.turnover); }, 0);
+  var bonus = ss.reduce(function(a,s){ return a + sessionBonusOf(st,s); }, 0);
   return { hours: hours, base: base, meal: meal, bonus: bonus, total: base + meal + bonus, sessions: ss };
 }
 function hostMonthCalc(st,hostId,y,m){
-  var host = hostById(st,hostId);
-  var rate = host ? host.ratePerHour : 0;
   var ss = sessionsOfMonth(st,y,m).filter(function(s){ return s.hostId===hostId; });
   var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
-  var base = Math.round(rate * hours);
+  var base = ss.reduce(function(a,s){ return a + Math.round(sessionRateOf(st,s) * Number(s.hours)); }, 0);
   var dates = [];
   ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
   var mealDays = 0, meal = 0;
@@ -396,15 +437,13 @@ function hostMonthCalc(st,hostId,y,m){
     var dc = hostDayCalc(st,hostId,d);
     if (dc.meal > 0){ mealDays++; meal += dc.meal; }
   });
-  var bonus = ss.reduce(function(a,s){ return a + sessionBonus(s.turnover); }, 0);
+  var bonus = ss.reduce(function(a,s){ return a + sessionBonusOf(st,s); }, 0);
   return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
 }
 function hostPeriodCalc(st,hostId,startDateStr,endDateStr){
-  var host = hostById(st,hostId);
-  var rate = host ? host.ratePerHour : 0;
   var ss = st.sessions.filter(function(s){ return s.hostId===hostId && s.date>=startDateStr && s.date<=endDateStr; });
   var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
-  var base = Math.round(rate * hours);
+  var base = ss.reduce(function(a,s){ return a + Math.round(sessionRateOf(st,s) * Number(s.hours)); }, 0);
   var dates = [];
   ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
   var mealDays = 0, meal = 0;
@@ -412,7 +451,7 @@ function hostPeriodCalc(st,hostId,startDateStr,endDateStr){
     var dc = hostDayCalc(st,hostId,d);
     if (dc.meal > 0){ mealDays++; meal += dc.meal; }
   });
-  var bonus = ss.reduce(function(a,s){ return a + sessionBonus(s.turnover); }, 0);
+  var bonus = ss.reduce(function(a,s){ return a + sessionBonusOf(st,s); }, 0);
   return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
 }
 function dayTotalAll(st,date){
@@ -433,10 +472,8 @@ function accountMonthCalc(st,accountId,y,m){
   var turnover = ss.reduce(function(a,s){ return a + Number(s.turnover); }, 0);
   var base = 0, bonus = 0;
   ss.forEach(function(s){
-    var h = hostById(st,s.hostId);
-    var rate = h ? h.ratePerHour : 0;
-    base += Math.round(rate * Number(s.hours));
-    bonus += sessionBonus(s.turnover);
+    base += Math.round(sessionRateOf(st,s) * Number(s.hours));
+    bonus += sessionBonusOf(st,s);
   });
   var meal = 0;
   var seen = {};
@@ -507,6 +544,7 @@ function renderAll(){
   renderPerOrang();
   renderRekap();
   renderMaster();
+  renderBonusTexts();
 }
 
 /* --- Catat Sesi --- */
@@ -515,7 +553,7 @@ function updateBonusPreview(){
   var el = document.getElementById('bonusPreview');
   if (isNaN(t) || t < 0){ el.textContent = 'Bonus sesi ini: —'; return; }
   var b = sessionBonus(Math.round(t));
-  el.textContent = 'Bonus sesi ini: ' + fmtRp(b) + (t >= BONUS_MIN_TURNOVER ? ' (omset ≥ Rp 5.000.000 → 0,5%)' : ' (omset di bawah Rp 5.000.000)');
+  el.textContent = 'Bonus sesi ini: ' + fmtRp(b) + (t >= BONUS_MIN_TURNOVER ? ' (omset ≥ Rp 5.000.000 → ' + fmtPct(bonusPctOf(state)) + ')' : ' (omset di bawah Rp 5.000.000)');
 }
 function onSaveSession(e){
   e.preventDefault();
@@ -538,9 +576,10 @@ function onSaveSession(e){
   turnover = Math.round(turnover);
   if (editId){
     var s = state.sessions.find(function(x){ return x.id===editId; });
-    if (s){ s.hostId=hostId; s.accountId=accountId; s.date=date; s.hours=hours; s.turnover=turnover; }
+    if (s){ s.hostId=hostId; s.accountId=accountId; s.date=date; s.hours=hours; s.turnover=turnover; /* snapshot tarif/persen dipertahankan */ }
   } else {
-    state.sessions.push({ id: uid(), hostId: hostId, accountId: accountId, date: date, hours: hours, turnover: turnover });
+    var hostNow = hostById(state, hostId);
+    state.sessions.push({ id: uid(), hostId: hostId, accountId: accountId, date: date, hours: hours, turnover: turnover, rate: hostNow ? hostNow.ratePerHour : 0, bonusPct: bonusPctOf(state) });
   }
   saveState();
   cancelEditSession();
@@ -589,7 +628,7 @@ function renderSessionList(){
   }).map(function(x){ return x.s; }).slice(0,20);
   if (list.length === 0){ el.innerHTML = '<p class="muted">Belum ada sesi. Catat sesi pertama di atas.</p>'; return; }
   el.innerHTML = list.map(function(s){
-    return '<div class="session-item"><div class="row1"><span>' + fmtDateID(s.date) + ' • ' + escapeHtml(hostName(s.hostId)) + '</span><span class="money">Bonus ' + fmtRp(sessionBonus(s.turnover)) + '</span></div>'
+    return '<div class="session-item"><div class="row1"><span>' + fmtDateID(s.date) + ' • ' + escapeHtml(hostName(s.hostId)) + '</span><span class="money">Bonus ' + fmtRp(sessionBonusOf(state,s)) + '</span></div>'
       + '<div class="row2">' + escapeHtml(accountName(s.accountId)) + ' • ' + fmtHours(s.hours) + ' • Omset ' + fmtRp(s.turnover) + '</div>'
       + '<div class="actions"><button class="btn btn-secondary btn-small" data-edit-sesi="' + s.id + '">Ubah</button> <button class="btn btn-danger btn-small" data-del-sesi="' + s.id + '">Hapus</button></div></div>';
   }).join('');
@@ -655,7 +694,7 @@ function renderCalDetail(dateStr){
       html += '<div class="day-row" style="cursor:default"><div class="top"><span>' + escapeHtml(ph.host.name) + '</span><span class="money">' + fmtRp(ph.total) + '</span></div>'
         + '<div class="sub">' + fmtHours(ph.hours) + ' • Pokok ' + fmtRp(ph.base) + ' • Uang makan ' + fmtRp(ph.meal) + ' • Bonus ' + fmtRp(ph.bonus) + '</div>';
       ph.sessions.forEach(function(s){
-        html += '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + ', bonus ' + fmtRp(sessionBonus(s.turnover)) + '</div>';
+        html += '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + ', bonus ' + fmtRp(sessionBonusOf(state,s)) + '</div>';
       });
       html += '</div>';
     });
@@ -708,7 +747,7 @@ function renderPerOrang(){
       + '<div class="sub">' + fmtHours(dc.hours) + ' • Pokok ' + fmtRp(dc.base) + ' • Uang makan ' + fmtRp(dc.meal) + ' • Bonus ' + fmtRp(dc.bonus) + '</div>'
       + '<div class="day-detail" style="display:none">'
       + dc.sessions.map(function(s){
-          return '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + ', bonus ' + fmtRp(sessionBonus(s.turnover)) + '</div>';
+          return '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + ', bonus ' + fmtRp(sessionBonusOf(state,s)) + '</div>';
         }).join('')
       + '<div class="sess" style="font-weight:600">Total hari itu: ' + fmtRp(dc.total) + '</div>'
       + '</div></div>';
@@ -810,7 +849,7 @@ function openSlip(hostId){
   } else {
     html += '<table><thead><tr><th>Tanggal</th><th>Akun</th><th class="num">Jam</th><th class="num">Omset</th><th class="num">Bonus</th></tr></thead><tbody>';
     ss.forEach(function(s){
-      html += '<tr><td>' + fmtDateID(s.date) + '</td><td>' + escapeHtml(accountName(s.accountId)) + '</td><td class="num">' + fmtHours(s.hours) + '</td><td class="num money">' + fmtRp(s.turnover) + '</td><td class="num money">' + fmtRp(sessionBonus(s.turnover)) + '</td></tr>';
+      html += '<tr><td>' + fmtDateID(s.date) + '</td><td>' + escapeHtml(accountName(s.accountId)) + '</td><td class="num">' + fmtHours(s.hours) + '</td><td class="num money">' + fmtRp(s.turnover) + '</td><td class="num money">' + fmtRp(sessionBonusOf(state,s)) + '</td></tr>';
     });
     html += '</tbody></table>';
   }
@@ -942,7 +981,7 @@ function downloadExcel(){
   var sesiRows = [['Tanggal','Host','Akun','Jam','Omset (Rp)','Bonus (Rp)']];
   var ss = sessionsOfMonth(state, p.y, p.m).slice().sort(function(a,b){ return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
   ss.forEach(function(s){
-    sesiRows.push([s.date, hostName(s.hostId), accountName(s.accountId), s.hours, s.turnover, sessionBonus(s.turnover)]);
+    sesiRows.push([s.date, hostName(s.hostId), accountName(s.accountId), s.hours, s.turnover, sessionBonusOf(state,s)]);
   });
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rekapRows), 'Rekap');
@@ -971,6 +1010,72 @@ function renderMaster(){
   al.querySelectorAll('[data-edit-acc]').forEach(function(b){ b.addEventListener('click', function(){ editAccount(b.getAttribute('data-edit-acc')); }); });
   al.querySelectorAll('[data-del-acc]').forEach(function(b){ b.addEventListener('click', function(){ deleteAccount(b.getAttribute('data-del-acc')); }); });
 }
+/* Terapkan perubahan tarif host. scope 'all' = semua sesi (lama+baru) pakai tarif baru;
+   scope 'new' = sesi lama yang belum punya snapshot ditandai tarif lama dulu. */
+function applyRateChange(st, hostId, newRate, scope){
+  var h = hostById(st, hostId);
+  if (!h) return false;
+  var oldRate = h.ratePerHour;
+  if (scope === 'all'){
+    st.sessions.forEach(function(s){ if (s.hostId===hostId) s.rate = newRate; });
+  } else {
+    st.sessions.forEach(function(s){ if (s.hostId===hostId && (typeof s.rate !== 'number' || isNaN(s.rate))) s.rate = oldRate; });
+  }
+  h.ratePerHour = newRate;
+  return true;
+}
+/* Terapkan perubahan persen bonus global. scope sama seperti applyRateChange. */
+function applyBonusPctChange(st, newPct, scope){
+  var oldPct = bonusPctOf(st);
+  if (scope === 'all'){
+    st.sessions.forEach(function(s){ s.bonusPct = newPct; });
+  } else {
+    st.sessions.forEach(function(s){ if (typeof s.bonusPct !== 'number' || isNaN(s.bonusPct)) s.bonusPct = oldPct; });
+  }
+  st.bonusPct = newPct;
+  return true;
+}
+/* Modal pilihan dua opsi (tanpa confirm bawaan). */
+function openChoiceModal(opts){
+  var c = document.getElementById('choiceContent');
+  c.innerHTML = '<h2>' + escapeHtml(opts.title) + '</h2>'
+    + '<p style="margin:6px 0 16px">' + escapeHtml(opts.message) + '</p>'
+    + '<div class="modal-actions">'
+    + '<button class="btn" id="choiceAllBtn">' + escapeHtml(opts.allLabel) + '</button>'
+    + '<button class="btn btn-secondary" id="choiceNewBtn">' + escapeHtml(opts.newLabel) + '</button>'
+    + '<button class="btn btn-secondary" id="choiceCancelBtn">Batal</button>'
+    + '</div>';
+  document.getElementById('choiceAllBtn').addEventListener('click', function(){ closeChoiceModal(); if (opts.onAll) opts.onAll(); });
+  document.getElementById('choiceNewBtn').addEventListener('click', function(){ closeChoiceModal(); if (opts.onNew) opts.onNew(); });
+  document.getElementById('choiceCancelBtn').addEventListener('click', closeChoiceModal);
+  document.getElementById('choiceModal').classList.add('open');
+}
+function closeChoiceModal(){
+  document.getElementById('choiceModal').classList.remove('open');
+}
+/* Tampilkan persen bonus yang sedang berlaku di layar login, catatan form, dan input pengaturan. */
+function renderBonusTexts(){
+  var pctTxt = fmtPct(bonusPctOf(state));
+  var lb = document.getElementById('loginBonusPct'); if (lb) lb.textContent = pctTxt;
+  var fn = document.getElementById('formBonusPct'); if (fn) fn.textContent = pctTxt;
+  var bi = document.getElementById('bonusPctInput'); if (bi && document.activeElement !== bi) bi.value = fmtPctNum(bonusPctOf(state));
+}
+function onSaveBonus(e){
+  e.preventDefault();
+  var v = parseNum(document.getElementById('bonusPctInput').value);
+  if (isNaN(v) || v < 0 || v > 100){ alert('Persentase bonus harus angka 0 sampai 100.'); return; }
+  var newPct = Math.round(v * 100) / 10000;
+  var oldPct = bonusPctOf(state);
+  if (newPct === oldPct){ renderBonusTexts(); return; }
+  openChoiceModal({
+    title: 'Ubah Persentase Bonus',
+    message: 'Persentase bonus berubah dari ' + fmtPct(oldPct) + ' menjadi ' + fmtPct(newPct) + '. Berlaku untuk sesi yang mana?',
+    allLabel: 'Semua sesi (termasuk yang sudah dicatat)',
+    newLabel: 'Hanya sesi baru',
+    onAll: function(){ applyBonusPctChange(state, newPct, 'all'); saveState(); renderAll(); },
+    onNew: function(){ applyBonusPctChange(state, newPct, 'new'); saveState(); renderAll(); }
+  });
+}
 function onSaveHost(e){
   e.preventDefault();
   var name = document.getElementById('hName').value.trim();
@@ -981,13 +1086,29 @@ function onSaveHost(e){
   rate = Math.round(rate);
   if (editId){
     var h = hostById(state, editId);
-    if (h){ h.name = name; h.ratePerHour = rate; }
+    if (!h) return;
+    if (rate === h.ratePerHour){
+      h.name = name;
+      saveState();
+      cancelEditHost();
+      renderAll();
+      return;
+    }
+    var oldRate = h.ratePerHour;
+    openChoiceModal({
+      title: 'Ubah Tarif — ' + name,
+      message: 'Tarif ' + name + ' berubah dari ' + fmtRp(oldRate) + '/jam menjadi ' + fmtRp(rate) + '/jam. Berlaku untuk sesi yang mana?',
+      allLabel: 'Semua sesi (termasuk yang sudah dicatat)',
+      newLabel: 'Hanya sesi baru',
+      onAll: function(){ h.name = name; applyRateChange(state, editId, rate, 'all'); saveState(); cancelEditHost(); renderAll(); },
+      onNew: function(){ h.name = name; applyRateChange(state, editId, rate, 'new'); saveState(); cancelEditHost(); renderAll(); }
+    });
   } else {
     state.hosts.push({ id: uid(), name: name, ratePerHour: rate });
+    saveState();
+    cancelEditHost();
+    renderAll();
   }
-  saveState();
-  cancelEditHost();
-  renderAll();
 }
 function editHost(id){
   var h = hostById(state, id);
@@ -1228,7 +1349,8 @@ function createSheet(){
       sheets: [
         { properties: { title: 'Host' } },
         { properties: { title: 'Akun' } },
-        { properties: { title: 'Sesi' } }
+        { properties: { title: 'Sesi' } },
+        { properties: { title: 'Pengaturan' } }
       ]
     }
   }).then(function(r){ if (!r.ok) throw new Error('Buat sheet gagal (' + r.status + ')'); return r.json(); })
@@ -1237,7 +1359,8 @@ function createSheet(){
     if (auth.email) storeSheetId(auth.email, sheetId);
     return sheetValuesUpdate('Host!A1:B1', [['Nama','Tarif per Jam']])
       .then(function(){ return sheetValuesUpdate('Akun!A1:A1', [['Nama Akun']]); })
-      .then(function(){ return sheetValuesUpdate('Sesi!A1:F1', [['Tanggal','Host','Akun','Jam','Menit','Omset']]); });
+      .then(function(){ return sheetValuesUpdate('Sesi!A1:H1', [['Tanggal','Host','Akun','Jam','Menit','Omset','Tarif','Bonus (%)']]); })
+      .then(function(){ return sheetValuesUpdate('Pengaturan!A1:B2', [['Pengaturan','Nilai'],['Persentase Bonus', Math.round(bonusPctOf(state) * 10000) / 100]]).then(function(){ settingsTabReady = true; }).catch(function(){ /* tab sudah dibuat; nilainya ditulis saat simpan berikutnya */ }); });
   });
 }
 function localHasData(){
@@ -1248,14 +1371,19 @@ function loadFromSheet(){
   return Promise.all([
     sheetValuesGet('Host!A2:B200'),
     sheetValuesGet('Akun!A2:A200'),
-    sheetValuesGet('Sesi!A2:F2000')
+    sheetValuesGet('Sesi!A2:H2000'),
+    sheetValuesGetSafe('Pengaturan!A2:B20')
   ]).then(function(results){
     var hostRows = (results[0].values || []);
     var accRows = (results[1].values || []);
     var sesRows = (results[2].values || []);
+    var setRows = (results[3].values || []);
     var hasSheetData = hostRows.length > 0 || accRows.length > 0 || sesRows.length > 0;
     if (hasSheetData){
+      var prevPct = bonusPctOf(state);
       state = stateFromSheet(hostRows, accRows, sesRows);
+      var sheetPct = settingsPctFromRows(setRows);
+      state.bonusPct = (sheetPct !== null) ? sheetPct : prevPct;
       saveStateLocalOnly();
       sheetReady = true;
     } else if (localHasData()){
@@ -1271,7 +1399,7 @@ function loadFromSheet(){
   });
 }
 function stateFromSheet(hostRows, accRows, sesRows){
-  var st = { hosts: [], accounts: [], sessions: [] };
+  var st = { hosts: [], accounts: [], sessions: [], bonusPct: BONUS_RATE };
   var hostIdByName = {};
   hostRows.forEach(function(r){
     var name = String(r[0] || '').trim();
@@ -1311,7 +1439,12 @@ function stateFromSheet(hostRows, accRows, sesRows){
       accIdByName[aName] = accId;
       st.accounts.push({ id: accId, name: aName || 'Dozer.Store25' });
     }
-    st.sessions.push({ id: uid(), hostId: hostId, accountId: accId, date: date, hours: jam + menit / 60, turnover: Math.round(omset) });
+    var sRate = parseNum(r[6]); if (isNaN(sRate) || sRate <= 0) sRate = undefined;
+    var sPct = parseNum(r[7]); if (isNaN(sPct) || sPct < 0) sPct = undefined; else sPct = sPct / 100;
+    var sess = { id: uid(), hostId: hostId, accountId: accId, date: date, hours: jam + menit / 60, turnover: Math.round(omset) };
+    if (sRate !== undefined) sess.rate = Math.round(sRate);
+    if (sPct !== undefined) sess.bonusPct = sPct;
+    st.sessions.push(sess);
   });
   return st;
 }
@@ -1320,12 +1453,55 @@ function stateToSheetValues(){
   state.hosts.forEach(function(h){ hostRows.push([h.name, h.ratePerHour]); });
   var accRows = [['Nama Akun']];
   state.accounts.forEach(function(a){ accRows.push([a.name]); });
-  var sesRows = [['Tanggal','Host','Akun','Jam','Menit','Omset']];
+  var sesRows = [['Tanggal','Host','Akun','Jam','Menit','Omset','Tarif','Bonus (%)']];
   state.sessions.forEach(function(s){
     var totalMin = Math.round(Number(s.hours) * 60);
-    sesRows.push([s.date, hostName(s.hostId), accountName(s.accountId), Math.floor(totalMin / 60), totalMin % 60, s.turnover]);
+    sesRows.push([s.date, hostName(s.hostId), accountName(s.accountId), Math.floor(totalMin / 60), totalMin % 60, s.turnover,
+      (typeof s.rate === 'number' ? s.rate : ''),
+      (typeof s.bonusPct === 'number' ? Math.round(s.bonusPct * 10000) / 100 : '')]);
   });
   return { hostRows: hostRows, accRows: accRows, sesRows: sesRows };
+}
+function sheetValuesGetSafe(range){
+  return sheetValuesGet(range).catch(function(){ return { values: [] }; });
+}
+/* Baca persen bonus dari baris tab Pengaturan; null bila tidak ada/tidak valid. */
+function settingsPctFromRows(rows){
+  if (!rows) return null;
+  for (var i = 0; i < rows.length; i++){
+    var k = String(rows[i][0] || '').trim();
+    if (k === 'Persentase Bonus'){
+      var v = parseNum(rows[i][1]);
+      if (!isNaN(v) && v >= 0 && v <= 100) return v / 100;
+      return null;
+    }
+  }
+  return null;
+}
+var settingsTabReady = false;
+/* Pastikan tab Pengaturan ada (cek daftar sheet dulu, buat bila belum ada). */
+function ensureSettingsTab(){
+  if (settingsTabReady || !sheetId || !auth.accessToken) return Promise.resolve(settingsTabReady);
+  return gapiFetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '?fields=sheets.properties.title')
+    .then(function(r){ if (!r.ok) throw new Error('Meta sheet gagal (' + r.status + ')'); return r.json(); })
+    .then(function(j){
+      var titles = (j.sheets || []).map(function(s){ return s.properties && s.properties.title; });
+      if (titles.indexOf('Pengaturan') !== -1){ settingsTabReady = true; return true; }
+      return gapiFetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + ':batchUpdate', {
+        method: 'POST',
+        body: { requests: [ { addSheet: { properties: { title: 'Pengaturan' } } } ] }
+      }).then(function(r2){ if (!r2.ok) throw new Error('Buat tab Pengaturan gagal (' + r2.status + ')'); settingsTabReady = true; return true; });
+    })
+    .catch(function(){ return false; });
+}
+/* Tulis persen bonus ke tab Pengaturan. Gagal = false, dan TIDAK merusak simpan data utama. */
+function writeSettingsToSheet(){
+  return ensureSettingsTab().then(function(ok){
+    if (!ok) return false;
+    return sheetValuesUpdate('Pengaturan!A1:B2', [['Pengaturan','Nilai'],['Persentase Bonus', Math.round(bonusPctOf(state) * 10000) / 100]])
+      .then(function(){ return true; })
+      .catch(function(){ return false; });
+  });
 }
 function writeAllSheets(){
   if (!sheetId || !auth.accessToken) return Promise.resolve(false);
@@ -1335,8 +1511,9 @@ function writeAllSheets(){
     .then(function(){ return sheetValuesUpdate('Host!A1:B' + v.hostRows.length, v.hostRows); })
     .then(function(){ return sheetValuesClear('Akun!A1:A200'); })
     .then(function(){ return sheetValuesUpdate('Akun!A1:A' + v.accRows.length, v.accRows); })
-    .then(function(){ return sheetValuesClear('Sesi!A1:F2000'); })
-    .then(function(){ return sheetValuesUpdate('Sesi!A1:F' + v.sesRows.length, v.sesRows); })
+    .then(function(){ return sheetValuesClear('Sesi!A1:H2000'); })
+    .then(function(){ return sheetValuesUpdate('Sesi!A1:H' + v.sesRows.length, v.sesRows); })
+    .then(function(){ return writeSettingsToSheet(); })
     .then(function(){ setSyncStatus('Tersimpan di Google Sheet ✓'); return true; })
     .catch(function(){
       setSyncStatus('Gagal menyimpan ke Sheet — data tetap tersimpan lokal');
@@ -1370,11 +1547,9 @@ function currentISOWeekStr(){
   return year + '-W' + String(week).padStart(2, '0');
 }
 function hostRangeCalc(st, hostId, startStr, endStr){
-  var host = hostById(st, hostId);
-  var rate = host ? host.ratePerHour : 0;
   var ss = st.sessions.filter(function(s){ return s.hostId===hostId && s.date >= startStr && s.date <= endStr; });
   var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
-  var base = Math.round(rate * hours);
+  var base = ss.reduce(function(a,s){ return a + Math.round(sessionRateOf(st,s) * Number(s.hours)); }, 0);
   var dates = [];
   ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
   var mealDays = 0, meal = 0;
@@ -1382,7 +1557,7 @@ function hostRangeCalc(st, hostId, startStr, endStr){
     var dc = hostDayCalc(st, hostId, d);
     if (dc.meal > 0){ mealDays++; meal += dc.meal; }
   });
-  var bonus = ss.reduce(function(a,s){ return a + sessionBonus(s.turnover); }, 0);
+  var bonus = ss.reduce(function(a,s){ return a + sessionBonusOf(st,s); }, 0);
   return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
 }
 function buildPdf(title, subtitle, rows, totals, fileName){
@@ -1505,6 +1680,9 @@ function initUI(){
   });
   document.getElementById('hostForm').addEventListener('submit', onSaveHost);
   document.getElementById('hostCancelBtn').addEventListener('click', cancelEditHost);
+  document.getElementById('bonusForm').addEventListener('submit', onSaveBonus);
+  document.getElementById('choiceModal').addEventListener('click', function(e){ if (e.target === this) closeChoiceModal(); });
+  renderBonusTexts();
   document.getElementById('accountForm').addEventListener('submit', onSaveAccount);
   document.getElementById('accountCancelBtn').addEventListener('click', cancelEditAccount);
   document.getElementById('slipModal').addEventListener('click', function(e){ if (e.target === this) this.classList.remove('open'); });
