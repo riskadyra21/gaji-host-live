@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gaji Host Live</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+:root{
+  --primary:#4f46e5; --primary-dark:#3730a3; --bg:#f1f5f9; --card:#ffffff;
+  --text:#0f172a; --muted:#64748b; --border:#e2e8f0; --green:#15803d;
+  --green-bg:#dcfce7; --red:#dc2626;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:15px;line-height:1.5}
+header{background:var(--primary);color:#fff;padding:16px 16px 12px}
+header h1{margin:0;font-size:20px}
+header p{margin:2px 0 0;font-size:13px;opacity:.9}
+.tabs{display:flex;gap:2px;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;overflow-x:auto}
+.tabs button{flex:1 0 auto;background:none;border:none;padding:12px 10px;font-size:14px;font-weight:600;color:var(--muted);border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+.tabs button.active{color:var(--primary);border-bottom-color:var(--primary)}
+main{max-width:960px;margin:0 auto;padding:12px 12px 40px}
+section.tab-page{display:none}
+section.tab-page.active{display:block}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:12px}
+.card h2{margin:0 0 12px;font-size:17px}
+label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px;color:#334155}
+input,select{width:100%;padding:10px 12px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px;background:#fff}
+input:focus,select:focus{outline:2px solid var(--primary);border-color:var(--primary)}
+.btn{display:inline-block;background:var(--primary);color:#fff;border:none;border-radius:8px;padding:11px 18px;font-size:15px;font-weight:600;cursor:pointer;margin-top:12px}
+.btn:hover{background:var(--primary-dark)}
+.btn-secondary{background:#fff;color:var(--primary);border:1px solid var(--primary)}
+.btn-danger{background:#fff;color:var(--red);border:1px solid var(--red)}
+.btn-small{padding:6px 10px;font-size:13px;margin:0 2px}
+.muted{color:var(--muted);font-size:13px}
+.money{font-variant-numeric:tabular-nums;white-space:nowrap}
+.total-box{background:var(--green-bg);border:1px solid #86efac;border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.total-box .lbl{font-size:13px;font-weight:600;color:#166534}
+.total-box .val{font-size:26px;font-weight:800;color:#14532d}
+.stat-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+@media(min-width:640px){.stat-grid{grid-template-columns:repeat(3,1fr)}}
+.stat{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.stat .lbl{font-size:12px;color:var(--muted);font-weight:600}
+.stat .val{font-size:18px;font-weight:700;margin-top:2px}
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 10px;border-bottom:1px solid var(--border);text-align:left}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+td.num,th.num{text-align:right}
+tr.total-row td{font-weight:800;background:#f8fafc}
+.session-item{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px}
+.session-item .row1{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.session-item .row2{font-size:13px;color:var(--muted);margin-top:2px}
+.session-item .actions{margin-top:6px}
+.cal-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+.cal-head .month-title{font-size:17px;font-weight:700}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal-dow{font-size:11px;font-weight:700;text-align:center;color:var(--muted);padding:4px 0}
+.cal-day{min-height:62px;border:1px solid var(--border);border-radius:8px;padding:4px 5px;background:#fff;cursor:pointer;font-size:12px}
+.cal-day .dnum{font-weight:700}
+.cal-day .amt{color:var(--green);font-weight:600;font-size:11px;line-height:1.2;word-break:break-word}
+.cal-day.empty{background:transparent;border-color:transparent;cursor:default}
+.cal-day.today{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
+.cal-day.selected{background:#eef2ff;border-color:var(--primary)}
+.cal-day.has-data{background:#f0fdf4}
+.day-row{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.day-row .top{display:flex;justify-content:space-between;font-weight:600}
+.day-row .sub{font-size:13px;color:var(--muted)}
+.day-detail{margin-top:8px;border-top:1px dashed var(--border);padding-top:8px;font-size:14px}
+.day-detail .sess{font-size:13px;color:#334155}
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:flex-start;justify-content:center;padding:20px 12px;z-index:50;overflow-y:auto}
+.modal-overlay.open{display:flex}
+.modal-card{background:#fff;border-radius:12px;max-width:560px;width:100%;padding:20px}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap}
+.slip h2{text-align:center;margin:0 0 2px}
+.slip .sub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:12px}
+.slip table td:first-child{color:var(--muted)}
+@media print{
+  body > *:not(#slipModal){display:none !important}
+  #slipModal{position:static;background:none;padding:0}
+  #slipModal .modal-card{box-shadow:none;max-width:100%;padding:0}
+  #slipModal .modal-actions{display:none}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Gaji Host Live</h1>
+  <p>Hitung gaji host live TikTok — pokok, uang makan, dan bonus omset</p>
+</header>
+<nav class="tabs" id="tabs">
+  <button data-tab="sesi" class="active">Catat Sesi</button>
+  <button data-tab="kalender">Kalender</button>
+  <button data-tab="orang">Per Orang</button>
+  <button data-tab="rekap">Rekap</button>
+  <button data-tab="master">Host &amp; Akun</button>
+</nav>
+<main id="app">
+
+  <section id="tab-sesi" class="tab-page active">
+    <div class="card">
+      <h2 id="formTitle">Catat Sesi Live</h2>
+      <form id="sessionForm">
+        <label for="fHost">Host</label>
+        <select id="fHost" required></select>
+        <label for="fAccount">Akun</label>
+        <select id="fAccount" required></select>
+        <label for="fDate">Tanggal</label>
+        <input type="date" id="fDate" required />
+        <label for="fHours">Total Jam (kelipatan 0,5 — contoh: 1,5 / 2 / 2,5 / 4)</label>
+        <input type="number" id="fHours" step="0.5" min="0.5" placeholder="2" required />
+        <label for="fTurnover">Omset Sesi (Rp)</label>
+        <input type="number" id="fTurnover" min="0" step="1" placeholder="0" required />
+        <p class="muted" id="bonusPreview">Bonus sesi ini: Rp 0</p>
+        <input type="hidden" id="fEditId" value="" />
+        <button type="submit" class="btn" id="saveBtn">Simpan Sesi</button>
+        <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display:none">Batal Ubah</button>
+      </form>
+      <p class="muted" style="margin-top:10px">Bonus: omset &ge; Rp 5.000.000 &rarr; 0,5% &times; omset. Di bawah itu bonus Rp 0. Uang makan Rp 10.000/hari bila total jam host hari itu &ge; 6 jam.</p>
+    </div>
+    <div class="card">
+      <h2>Sesi Terbaru</h2>
+      <div id="sessionList"></div>
+    </div>
+  </section>
+
+  <section id="tab-kalender" class="tab-page">
+    <div class="total-box">
+      <div class="lbl" id="calRunningLabel">Total berjalan bulan ini</div>
+      <div class="val money" id="calRunningTotal">Rp 0</div>
+    </div>
+    <div class="card">
+      <div class="cal-head">
+        <button class="btn btn-secondary btn-small" id="calPrev">&lsaquo; Sebelumnya</button>
+        <span class="month-title" id="calTitle"></span>
+        <button class="btn btn-secondary btn-small" id="calNext">Berikutnya &rsaquo;</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <p class="muted">Ketuk tanggal untuk melihat rincian hari itu.</p>
+    </div>
+    <div class="card" id="calDetailCard" style="display:none">
+      <h2 id="calDetailTitle">Rincian Hari</h2>
+      <div id="calDetail"></div>
+    </div>
+  </section>
+
+  <section id="tab-orang" class="tab-page">
+    <div class="card">
+      <h2>Per Orang</h2>
+      <label for="poHost">Host</label>
+      <select id="poHost"></select>
+      <label for="poMonth">Bulan</label>
+      <input type="month" id="poMonth" />
+      <div class="stat-grid" id="poSummary" style="margin-top:14px"></div>
+    </div>
+    <div class="card">
+      <h2>Rincian per Tanggal</h2>
+      <div id="poDays"></div>
+    </div>
+  </section>
+
+  <section id="tab-rekap" class="tab-page">
+    <div class="card">
+      <h2>Rekap Gaji Bulanan</h2>
+      <label for="rkMonth">Bulan</label>
+      <input type="month" id="rkMonth" />
+      <div class="table-wrap" style="margin-top:12px"><table id="rkTable"></table></div>
+      <div class="modal-actions" style="margin-top:12px">
+        <button class="btn" id="btnExcel">Unduh Excel (.xlsx)</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Rincian per Akun</h2>
+      <div class="table-wrap"><table id="rkAccountTable"></table></div>
+      <p class="muted">Uang makan dihitung ke akun sesi pertama host pada hari itu.</p>
+    </div>
+  </section>
+
+  <section id="tab-master" class="tab-page">
+    <div class="card">
+      <h2>Host</h2>
+      <form id="hostForm">
+        <label for="hName">Nama Host</label>
+        <input type="text" id="hName" placeholder="Nama host" required />
+        <label for="hRate">Tarif per Jam (Rp)</label>
+        <input type="number" id="hRate" min="1" step="1" placeholder="10000" required />
+        <input type="hidden" id="hEditId" value="" />
+        <button type="submit" class="btn" id="hostSaveBtn">Tambah Host</button>
+        <button type="button" class="btn btn-secondary" id="hostCancelBtn" style="display:none">Batal Ubah</button>
+      </form>
+      <div id="hostList" style="margin-top:14px"></div>
+    </div>
+    <div class="card">
+      <h2>Akun</h2>
+      <form id="accountForm">
+        <label for="aName">Nama Akun</label>
+        <input type="text" id="aName" placeholder="Nama akun TikTok" required />
+        <input type="hidden" id="aEditId" value="" />
+        <button type="submit" class="btn" id="accountSaveBtn">Tambah Akun</button>
+        <button type="button" class="btn btn-secondary" id="accountCancelBtn" style="display:none">Batal Ubah</button>
+      </form>
+      <div id="accountList" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+</main>
+<div class="modal-overlay" id="slipModal"><div class="modal-card slip" id="slipContent"></div></div>
+
+<script>
+'use strict';
+/* ===== Konstanta aturan ===== */
+var LS_KEY = 'gaji-host-live-v1';
+var MEAL_MIN_HOURS = 6;
+var MEAL_AMOUNT = 10000;
+var BONUS_MIN_TURNOVER = 5000000;
+var BONUS_RATE = 0.005;
+var MONTH_NAMES = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+var DAY_NAMES = ['Sen','Sel','Rab','Kam','Jum','Sab','Min'];
+
+/* ===== Util ===== */
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+function monthStr(y,m){ return y+'-'+pad2(m); }
+function parseMonthKey(k){ var p=k.split('-'); return {y:parseInt(p[0],10), m:parseInt(p[1],10)}; }
+function fmtRp(n){ return 'Rp ' + Math.round(n).toLocaleString('id-ID'); }
+function fmtShort(n){
+  n = Math.round(n);
+  if (n >= 1000000){ var v = n/1000000; return 'Rp ' + (v % 1 === 0 ? String(v) : v.toFixed(2).replace(/\.?0+$/,'')) + ' jt'; }
+  if (n >= 1000){ var v2 = n/1000; return 'Rp ' + (v2 % 1 === 0 ? String(v2) : v2.toFixed(1).replace(/\.0$/,'')) + ' rb'; }
+  return 'Rp ' + n;
+}
+function fmtDateID(dateStr){
+  var p = dateStr.split('-');
+  return parseInt(p[2],10) + ' ' + MONTH_NAMES[parseInt(p[1],10)-1] + ' ' + p[0];
+}
+function fmtHours(h){ return String(h).replace('.', ',') + ' jam'; }
+function parseNum(v){ if (v===null||v===undefined||v==='') return NaN; return parseFloat(String(v).replace(',', '.')); }
+function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+/* ===== State (localStorage) ===== */
+function defaultState(){ return { hosts: [], accounts: [{id: uid(), name: 'Dozer.Store25'}], sessions: [] }; }
+function loadState(){
+  try{
+    if (typeof localStorage === 'undefined') return defaultState();
+    var raw = localStorage.getItem(LS_KEY);
+    if (!raw) return defaultState();
+    var s = JSON.parse(raw);
+    if (!s || typeof s !== 'object') return defaultState();
+    if (!Array.isArray(s.hosts)) s.hosts = [];
+    if (!Array.isArray(s.accounts) || s.accounts.length === 0) s.accounts = defaultState().accounts;
+    if (!Array.isArray(s.sessions)) s.sessions = [];
+    return s;
+  }catch(e){ return defaultState(); }
+}
+var state = loadState();
+function saveState(){ try{ if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+
+/* ===== Perhitungan (fungsi murni — bisa diuji) ===== */
+function hostById(st,id){ return st.hosts.find(function(x){return x.id===id;}) || null; }
+function accountById(st,id){ return st.accounts.find(function(x){return x.id===id;}) || null; }
+function sessionBonus(turnover){
+  turnover = Number(turnover) || 0;
+  return turnover >= BONUS_MIN_TURNOVER ? Math.round(turnover * BONUS_RATE) : 0;
+}
+function sessionsOfMonth(st,y,m){
+  var p = y + '-' + pad2(m);
+  return st.sessions.filter(function(s){ return s.date.indexOf(p) === 0; });
+}
+function hostSessionsOn(st,hostId,date){
+  return st.sessions.filter(function(s){ return s.hostId===hostId && s.date===date; });
+}
+function hostDayCalc(st,hostId,date){
+  var host = hostById(st,hostId);
+  var rate = host ? host.ratePerHour : 0;
+  var ss = hostSessionsOn(st,hostId,date);
+  var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
+  var base = Math.round(rate * hours);
+  var meal = hours >= MEAL_MIN_HOURS ? MEAL_AMOUNT : 0;
+  var bonus = ss.reduce(function(a,s){ return a + sessionBonus(s.turnover); }, 0);
+  return { hours: hours, base: base, meal: meal, bonus: bonus, total: base + meal + bonus, sessions: ss };
+}
+function hostMonthCalc(st,hostId,y,m){
+  var host = hostById(st,hostId);
+  var rate = host ? host.ratePerHour : 0;
+  var ss = sessionsOfMonth(st,y,m).filter(function(s){ return s.hostId===hostId; });
+  var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
+  var base = Math.round(rate * hours);
+  var dates = [];
+  ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
+  var mealDays = 0, meal = 0;
+  dates.forEach(function(d){
+    var dc = hostDayCalc(st,hostId,d);
+    if (dc.meal > 0){ mealDays++; meal += dc.meal; }
+  });
+  var bonus = ss.reduce(function(a,s){ return a + sessionBonus(s.turnover); }, 0);
+  return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
+}
+function dayTotalAll(st,date){
+  var total = 0, perHost = [];
+  st.hosts.forEach(function(h){
+    var dc = hostDayCalc(st,h.id,date);
+    if (dc.sessions.length > 0){ perHost.push({ host: h, hours: dc.hours, base: dc.base, meal: dc.meal, bonus: dc.bonus, total: dc.total, sessions: dc.sessions }); total += dc.total; }
+  });
+  return { total: total, perHost: perHost };
+}
+function monthTotalAll(st,y,m){
+  var total = 0;
+  st.hosts.forEach(function(h){ total += hostMonthCalc(st,h.id,y,m).total; });
+  return total;
+}
+function accountMonthCalc(st,accountId,y,m){
+  var ss = sessionsOfMonth(st,y,m).filter(function(s){ return s.accountId===accountId; });
+  var turnover = ss.reduce(function(a,s){ return a + Number(s.turnover); }, 0);
+  var base = 0, bonus = 0;
+  ss.forEach(function(s){
+    var h = hostById(st,s.hostId);
+    var rate = h ? h.ratePerHour : 0;
+    base += Math.round(rate * Number(s.hours));
+    bonus += sessionBonus(s.turnover);
+  });
+  var meal = 0;
+  var seen = {};
+  ss.forEach(function(s){
+    var k = s.hostId + '|' + s.date;
+    if (seen[k]) return;
+    seen[k] = true;
+    var dc = hostDayCalc(st,s.hostId,s.date);
+    if (dc.meal > 0){
+      var daySessions = st.sessions.filter(function(x){ return x.hostId===s.hostId && x.date===s.date; });
+      var first = daySessions[0];
+      if (first && first.accountId === accountId) meal += dc.meal;
+    }
+  });
+  return { turnover: turnover, base: base, meal: meal, bonus: bonus, total: base + meal + bonus, sessionCount: ss.length };
+}
+
+/* ===== UI ===== */
+var ui = { calY: 0, calM: 0, calSelected: null };
+
+function hostName(id){ var h = hostById(state,id); return h ? h.name : '(host dihapus)'; }
+function accountName(id){ var a = accountById(state,id); return a ? a.name : '(akun dihapus)'; }
+
+function showTab(name){
+  document.querySelectorAll('#tabs button').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-tab')===name); });
+  document.querySelectorAll('.tab-page').forEach(function(p){ p.classList.toggle('active', p.id === 'tab-'+name); });
+  if (name==='kalender') renderCalendar();
+  if (name==='orang') renderPerOrang();
+  if (name==='rekap') renderRekap();
+  if (name==='master') renderMaster();
+  if (name==='sesi') renderSessionList();
+}
+
+function fillSelect(el, items, placeholder){
+  var cur = el.value;
+  el.innerHTML = '';
+  if (placeholder){
+    var o = document.createElement('option');
+    o.value = ''; o.textContent = placeholder;
+    el.appendChild(o);
+  }
+  items.forEach(function(it){
+    var op = document.createElement('option');
+    op.value = it.id; op.textContent = it.label;
+    el.appendChild(op);
+  });
+  if (cur && items.some(function(it){ return it.id===cur; })) el.value = cur;
+}
+
+function renderAll(){
+  fillSelect(
+    document.getElementById('fHost'),
+    state.hosts.map(function(h){ return { id: h.id, label: h.name + ' — ' + fmtRp(h.ratePerHour) + '/jam' }; }),
+    state.hosts.length ? '— Pilih Host —' : 'Belum ada host — tambah di menu Host & Akun'
+  );
+  fillSelect(
+    document.getElementById('fAccount'),
+    state.accounts.map(function(a){ return { id: a.id, label: a.name }; }),
+    '— Pilih Akun —'
+  );
+  renderSessionList();
+  renderCalendar();
+  fillSelect(
+    document.getElementById('poHost'),
+    state.hosts.map(function(h){ return { id: h.id, label: h.name }; }),
+    '— Pilih Host —'
+  );
+  renderPerOrang();
+  renderRekap();
+  renderMaster();
+}
+
+/* --- Catat Sesi --- */
+function updateBonusPreview(){
+  var t = parseNum(document.getElementById('fTurnover').value);
+  var el = document.getElementById('bonusPreview');
+  if (isNaN(t) || t < 0){ el.textContent = 'Bonus sesi ini: —'; return; }
+  var b = sessionBonus(Math.round(t));
+  el.textContent = 'Bonus sesi ini: ' + fmtRp(b) + (t >= BONUS_MIN_TURNOVER ? ' (omset ≥ Rp 5.000.000 → 0,5%)' : ' (omset di bawah Rp 5.000.000)');
+}
+function onSaveSession(e){
+  e.preventDefault();
+  var hostId = document.getElementById('fHost').value;
+  var accountId = document.getElementById('fAccount').value;
+  var date = document.getElementById('fDate').value;
+  var hours = parseNum(document.getElementById('fHours').value);
+  var turnover = parseNum(document.getElementById('fTurnover').value);
+  var editId = document.getElementById('fEditId').value;
+  if (!hostId){ alert('Pilih host dulu.'); return; }
+  if (!accountId){ alert('Pilih akun dulu.'); return; }
+  if (!date){ alert('Isi tanggal.'); return; }
+  if (isNaN(hours) || hours <= 0){ alert('Total jam harus diisi angka lebih dari 0.'); return; }
+  if (Math.abs(hours*2 - Math.round(hours*2)) > 1e-9){ alert('Total jam harus kelipatan 0,5 (contoh: 1,5 / 2 / 2,5 / 4).'); return; }
+  if (isNaN(turnover) || turnover < 0){ alert('Omset harus diisi angka 0 atau lebih.'); return; }
+  turnover = Math.round(turnover);
+  if (editId){
+    var s = state.sessions.find(function(x){ return x.id===editId; });
+    if (s){ s.hostId=hostId; s.accountId=accountId; s.date=date; s.hours=hours; s.turnover=turnover; }
+  } else {
+    state.sessions.push({ id: uid(), hostId: hostId, accountId: accountId, date: date, hours: hours, turnover: turnover });
+  }
+  saveState();
+  cancelEditSession();
+  document.getElementById('fHours').value = '';
+  document.getElementById('fTurnover').value = '';
+  updateBonusPreview();
+  renderAll();
+}
+function editSession(id){
+  var s = state.sessions.find(function(x){ return x.id===id; });
+  if (!s) return;
+  document.getElementById('fHost').value = s.hostId;
+  document.getElementById('fAccount').value = s.accountId;
+  document.getElementById('fDate').value = s.date;
+  document.getElementById('fHours').value = s.hours;
+  document.getElementById('fTurnover').value = s.turnover;
+  document.getElementById('fEditId').value = id;
+  document.getElementById('formTitle').textContent = 'Ubah Sesi';
+  document.getElementById('saveBtn').textContent = 'Simpan Perubahan';
+  document.getElementById('cancelEditBtn').style.display = 'inline-block';
+  updateBonusPreview();
+  showTab('sesi');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function cancelEditSession(){
+  document.getElementById('fEditId').value = '';
+  document.getElementById('formTitle').textContent = 'Catat Sesi Live';
+  document.getElementById('saveBtn').textContent = 'Simpan Sesi';
+  document.getElementById('cancelEditBtn').style.display = 'none';
+}
+function deleteSession(id){
+  if (!confirm('Hapus sesi ini?')) return;
+  state.sessions = state.sessions.filter(function(s){ return s.id!==id; });
+  saveState();
+  renderAll();
+}
+function renderSessionList(){
+  var el = document.getElementById('sessionList');
+  var list = state.sessions.map(function(s,i){ return { s: s, i: i }; }).sort(function(a,b){
+    if (a.s.date !== b.s.date) return a.s.date < b.s.date ? 1 : -1;
+    return b.i - a.i;
+  }).map(function(x){ return x.s; }).slice(0,20);
+  if (list.length === 0){ el.innerHTML = '<p class="muted">Belum ada sesi. Catat sesi pertama di atas.</p>'; return; }
+  el.innerHTML = list.map(function(s){
+    return '<div class="session-item"><div class="row1"><span>' + fmtDateID(s.date) + ' • ' + escapeHtml(hostName(s.hostId)) + '</span><span class="money">Bonus ' + fmtRp(sessionBonus(s.turnover)) + '</span></div>'
+      + '<div class="row2">' + escapeHtml(accountName(s.accountId)) + ' • ' + fmtHours(s.hours) + ' • Omset ' + fmtRp(s.turnover) + '</div>'
+      + '<div class="actions"><button class="btn btn-secondary btn-small" data-edit-sesi="' + s.id + '">Ubah</button> <button class="btn btn-danger btn-small" data-del-sesi="' + s.id + '">Hapus</button></div></div>';
+  }).join('');
+  el.querySelectorAll('[data-edit-sesi]').forEach(function(b){ b.addEventListener('click', function(){ editSession(b.getAttribute('data-edit-sesi')); }); });
+  el.querySelectorAll('[data-del-sesi]').forEach(function(b){ b.addEventListener('click', function(){ deleteSession(b.getAttribute('data-del-sesi')); }); });
+}
+
+/* --- Kalender --- */
+function shiftCal(d){
+  ui.calM += d;
+  if (ui.calM < 1){ ui.calM = 12; ui.calY--; }
+  if (ui.calM > 12){ ui.calM = 1; ui.calY++; }
+  ui.calSelected = null;
+  renderCalendar();
+}
+function renderCalendar(){
+  var y = ui.calY, m = ui.calM;
+  document.getElementById('calTitle').textContent = MONTH_NAMES[m-1] + ' ' + y;
+  document.getElementById('calRunningLabel').textContent = 'Total berjalan ' + MONTH_NAMES[m-1] + ' ' + y;
+  document.getElementById('calRunningTotal').textContent = fmtRp(monthTotalAll(state, y, m));
+  var grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+  DAY_NAMES.forEach(function(d){
+    var c = document.createElement('div');
+    c.className = 'cal-dow'; c.textContent = d;
+    grid.appendChild(c);
+  });
+  var firstDow = new Date(y, m-1, 1).getDay(); // 0 = Minggu
+  var offset = (firstDow + 6) % 7; // Senin = 0
+  var daysInMonth = new Date(y, m, 0).getDate();
+  var i, day;
+  for (i = 0; i < offset; i++){
+    var e = document.createElement('div');
+    e.className = 'cal-day empty';
+    grid.appendChild(e);
+  }
+  for (day = 1; day <= daysInMonth; day++){
+    (function(d){
+      var dateStr = y + '-' + pad2(m) + '-' + pad2(d);
+      var cell = document.createElement('div');
+      cell.className = 'cal-day';
+      var dt = dayTotalAll(state, dateStr);
+      if (dt.total > 0) cell.classList.add('has-data');
+      if (dateStr === todayStr()) cell.classList.add('today');
+      if (ui.calSelected === dateStr) cell.classList.add('selected');
+      cell.innerHTML = '<div class="dnum">' + d + '</div>' + (dt.total > 0 ? '<div class="amt">' + fmtShort(dt.total) + '</div>' : '');
+      cell.addEventListener('click', function(){ ui.calSelected = dateStr; renderCalendar(); renderCalDetail(dateStr); });
+      grid.appendChild(cell);
+    })(day);
+  }
+  if (ui.calSelected){ renderCalDetail(ui.calSelected); }
+  else { document.getElementById('calDetailCard').style.display = 'none'; }
+}
+function renderCalDetail(dateStr){
+  var card = document.getElementById('calDetailCard');
+  var dt = dayTotalAll(state, dateStr);
+  document.getElementById('calDetailTitle').textContent = 'Rincian ' + fmtDateID(dateStr);
+  var html = '';
+  if (dt.perHost.length === 0){
+    html = '<p class="muted">Tidak ada sesi pada tanggal ini.</p>';
+  } else {
+    dt.perHost.forEach(function(ph){
+      html += '<div class="day-row" style="cursor:default"><div class="top"><span>' + escapeHtml(ph.host.name) + '</span><span class="money">' + fmtRp(ph.total) + '</span></div>'
+        + '<div class="sub">' + fmtHours(ph.hours) + ' • Pokok ' + fmtRp(ph.base) + ' • Uang makan ' + fmtRp(ph.meal) + ' • Bonus ' + fmtRp(ph.bonus) + '</div>';
+      ph.sessions.forEach(function(s){
+        html += '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + ', bonus ' + fmtRp(sessionBonus(s.turnover)) + '</div>';
+      });
+      html += '</div>';
+    });
+    html += '<p style="font-weight:700">Total hari itu: <span class="money">' + fmtRp(dt.total) + '</span></p>';
+  }
+  document.getElementById('calDetail').innerHTML = html;
+  card.style.display = 'block';
+}
+
+/* --- Per Orang --- */
+function statBox(lbl, val){ return '<div class="stat"><div class="lbl">' + lbl + '</div><div class="val money">' + val + '</div></div>'; }
+function renderPerOrang(){
+  var hostId = document.getElementById('poHost').value;
+  var mk = document.getElementById('poMonth').value;
+  var sumEl = document.getElementById('poSummary');
+  var daysEl = document.getElementById('poDays');
+  if (!hostId || !mk){
+    sumEl.innerHTML = '';
+    daysEl.innerHTML = '<p class="muted">Pilih host dan bulan.</p>';
+    return;
+  }
+  var p = parseMonthKey(mk);
+  var c = hostMonthCalc(state, hostId, p.y, p.m);
+  sumEl.innerHTML =
+    statBox('Total Jam', fmtHours(c.hours)) +
+    statBox('Gaji Pokok', fmtRp(c.base)) +
+    statBox('Hari Uang Makan', c.mealDays + ' hari') +
+    statBox('Total Uang Makan', fmtRp(c.meal)) +
+    statBox('Total Bonus', fmtRp(c.bonus)) +
+    statBox('Total Gaji', fmtRp(c.total));
+  var ss = sessionsOfMonth(state, p.y, p.m).filter(function(s){ return s.hostId===hostId; });
+  var dates = [];
+  ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
+  dates.sort();
+  if (dates.length === 0){
+    daysEl.innerHTML = '<p class="muted">Belum ada sesi untuk host ini di bulan ini.</p>';
+    return;
+  }
+  var html = '';
+  dates.forEach(function(d){
+    var dc = hostDayCalc(state, hostId, d);
+    html += '<div class="day-row"><div class="top"><span>' + fmtDateID(d) + '</span><span class="money">' + fmtRp(dc.total) + '</span></div>'
+      + '<div class="sub">' + fmtHours(dc.hours) + ' • Pokok ' + fmtRp(dc.base) + ' • Uang makan ' + fmtRp(dc.meal) + ' • Bonus ' + fmtRp(dc.bonus) + '</div>'
+      + '<div class="day-detail" style="display:none">'
+      + dc.sessions.map(function(s){
+          return '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + ', bonus ' + fmtRp(sessionBonus(s.turnover)) + '</div>';
+        }).join('')
+      + '<div class="sess" style="font-weight:600">Total hari itu: ' + fmtRp(dc.total) + '</div>'
+      + '</div></div>';
+  });
+  daysEl.innerHTML = html;
+  daysEl.querySelectorAll('.day-row').forEach(function(row){
+    row.addEventListener('click', function(){
+      var det = row.querySelector('.day-detail');
+      det.style.display = det.style.display === 'none' ? 'block' : 'none';
+    });
+  });
+}
+
+/* --- Rekap --- */
+function renderRekap(){
+  var mk = document.getElementById('rkMonth').value;
+  if (!mk) return;
+  var p = parseMonthKey(mk);
+  var rows = state.hosts.map(function(h){ return { host: h, calc: hostMonthCalc(state, h.id, p.y, p.m) }; });
+  var tot = { hours: 0, base: 0, mealDays: 0, meal: 0, bonus: 0, total: 0 };
+  rows.forEach(function(r){
+    tot.hours += r.calc.hours; tot.base += r.calc.base; tot.mealDays += r.calc.mealDays;
+    tot.meal += r.calc.meal; tot.bonus += r.calc.bonus; tot.total += r.calc.total;
+  });
+  var html = '<thead><tr><th>Host</th><th class="num">Tarif/Jam</th><th class="num">Total Jam</th><th class="num">Gaji Pokok</th><th class="num">Hari Makan</th><th class="num">Uang Makan</th><th class="num">Bonus</th><th class="num">Total Gaji</th><th></th></tr></thead><tbody>';
+  if (rows.length === 0){
+    html += '<tr><td colspan="9" class="muted">Belum ada host. Tambah host di menu Host &amp; Akun.</td></tr>';
+  }
+  rows.forEach(function(r){
+    html += '<tr><td>' + escapeHtml(r.host.name) + '</td><td class="num money">' + fmtRp(r.host.ratePerHour) + '</td><td class="num">' + fmtHours(r.calc.hours) + '</td><td class="num money">' + fmtRp(r.calc.base) + '</td><td class="num">' + r.calc.mealDays + '</td><td class="num money">' + fmtRp(r.calc.meal) + '</td><td class="num money">' + fmtRp(r.calc.bonus) + '</td><td class="num money"><strong>' + fmtRp(r.calc.total) + '</strong></td><td><button class="btn btn-secondary btn-small" data-slip="' + r.host.id + '">Slip Gaji</button></td></tr>';
+  });
+  html += '<tr class="total-row"><td>TOTAL</td><td></td><td class="num">' + fmtHours(tot.hours) + '</td><td class="num money">' + fmtRp(tot.base) + '</td><td class="num">' + tot.mealDays + '</td><td class="num money">' + fmtRp(tot.meal) + '</td><td class="num money">' + fmtRp(tot.bonus) + '</td><td class="num money">' + fmtRp(tot.total) + '</td><td></td></tr></tbody>';
+  document.getElementById('rkTable').innerHTML = html;
+  document.querySelectorAll('#rkTable [data-slip]').forEach(function(b){
+    b.addEventListener('click', function(){ openSlip(b.getAttribute('data-slip')); });
+  });
+  var accHtml = '<thead><tr><th>Akun</th><th class="num">Total Omset</th><th class="num">Gaji Pokok</th><th class="num">Uang Makan</th><th class="num">Bonus</th><th class="num">Total</th></tr></thead><tbody>';
+  var atot = { turnover: 0, base: 0, meal: 0, bonus: 0, total: 0 };
+  state.accounts.forEach(function(a){
+    var c = accountMonthCalc(state, a.id, p.y, p.m);
+    atot.turnover += c.turnover; atot.base += c.base; atot.meal += c.meal; atot.bonus += c.bonus; atot.total += c.total;
+    accHtml += '<tr><td>' + escapeHtml(a.name) + '</td><td class="num money">' + fmtRp(c.turnover) + '</td><td class="num money">' + fmtRp(c.base) + '</td><td class="num money">' + fmtRp(c.meal) + '</td><td class="num money">' + fmtRp(c.bonus) + '</td><td class="num money"><strong>' + fmtRp(c.total) + '</strong></td></tr>';
+  });
+  accHtml += '<tr class="total-row"><td>TOTAL</td><td class="num money">' + fmtRp(atot.turnover) + '</td><td class="num money">' + fmtRp(atot.base) + '</td><td class="num money">' + fmtRp(atot.meal) + '</td><td class="num money">' + fmtRp(atot.bonus) + '</td><td class="num money">' + fmtRp(atot.total) + '</td></tr></tbody>';
+  document.getElementById('rkAccountTable').innerHTML = accHtml;
+}
+
+/* --- Slip Gaji --- */
+function openSlip(hostId){
+  var mk = document.getElementById('rkMonth').value;
+  if (!mk) return;
+  var p = parseMonthKey(mk);
+  var host = hostById(state, hostId);
+  if (!host) return;
+  var c = hostMonthCalc(state, hostId, p.y, p.m);
+  var ss = sessionsOfMonth(state, p.y, p.m).filter(function(s){ return s.hostId===hostId; }).sort(function(a,b){ return a.date < b.date ? -1 : 1; });
+  var html = '<h2>Slip Gaji Host Live</h2><p class="sub">Periode: ' + MONTH_NAMES[p.m-1] + ' ' + p.y + '</p>'
+    + '<table><tbody>'
+    + '<tr><td>Nama Host</td><td><strong>' + escapeHtml(host.name) + '</strong></td></tr>'
+    + '<tr><td>Tarif per Jam</td><td class="money">' + fmtRp(host.ratePerHour) + '</td></tr>'
+    + '<tr><td>Total Jam</td><td>' + fmtHours(c.hours) + '</td></tr>'
+    + '<tr><td>Gaji Pokok</td><td class="money">' + fmtRp(c.base) + '</td></tr>'
+    + '<tr><td>Uang Makan (' + c.mealDays + ' hari &times; Rp 10.000)</td><td class="money">' + fmtRp(c.meal) + '</td></tr>'
+    + '<tr><td>Total Bonus</td><td class="money">' + fmtRp(c.bonus) + '</td></tr>'
+    + '<tr><td><strong>Total Gaji</strong></td><td class="money"><strong>' + fmtRp(c.total) + '</strong></td></tr>'
+    + '</tbody></table>'
+    + '<h3 style="margin:16px 0 8px">Rincian Sesi</h3>';
+  if (ss.length === 0){
+    html += '<p class="muted">Belum ada sesi di bulan ini.</p>';
+  } else {
+    html += '<table><thead><tr><th>Tanggal</th><th>Akun</th><th class="num">Jam</th><th class="num">Omset</th><th class="num">Bonus</th></tr></thead><tbody>';
+    ss.forEach(function(s){
+      html += '<tr><td>' + fmtDateID(s.date) + '</td><td>' + escapeHtml(accountName(s.accountId)) + '</td><td class="num">' + fmtHours(s.hours) + '</td><td class="num money">' + fmtRp(s.turnover) + '</td><td class="num money">' + fmtRp(sessionBonus(s.turnover)) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  }
+  html += '<div class="modal-actions" style="margin-top:16px"><button class="btn" onclick="window.print()">Cetak / Simpan PDF</button><button class="btn btn-secondary" id="slipCloseBtn">Tutup</button></div>';
+  document.getElementById('slipContent').innerHTML = html;
+  document.getElementById('slipModal').classList.add('open');
+  document.getElementById('slipCloseBtn').addEventListener('click', function(){ document.getElementById('slipModal').classList.remove('open'); });
+}
+
+/* --- Unduh Excel --- */
+function downloadExcel(){
+  if (typeof XLSX === 'undefined'){
+    alert('Pustaka Excel (SheetJS) gagal dimuat. Periksa koneksi internet, lalu muat ulang halaman dan coba lagi.');
+    return;
+  }
+  var mk = document.getElementById('rkMonth').value;
+  if (!mk){ alert('Pilih bulan dulu.'); return; }
+  var p = parseMonthKey(mk);
+  var rekapRows = [['Nama Host','Tarif/Jam (Rp)','Total Jam','Gaji Pokok (Rp)','Hari Makan','Uang Makan (Rp)','Bonus (Rp)','Total Gaji (Rp)']];
+  var tot = { hours: 0, base: 0, mealDays: 0, meal: 0, bonus: 0, total: 0 };
+  state.hosts.forEach(function(h){
+    var c = hostMonthCalc(state, h.id, p.y, p.m);
+    tot.hours += c.hours; tot.base += c.base; tot.mealDays += c.mealDays;
+    tot.meal += c.meal; tot.bonus += c.bonus; tot.total += c.total;
+    rekapRows.push([h.name, h.ratePerHour, c.hours, c.base, c.mealDays, c.meal, c.bonus, c.total]);
+  });
+  rekapRows.push(['TOTAL','',tot.hours,tot.base,tot.mealDays,tot.meal,tot.bonus,tot.total]);
+  var sesiRows = [['Tanggal','Host','Akun','Jam','Omset (Rp)','Bonus (Rp)']];
+  var ss = sessionsOfMonth(state, p.y, p.m).slice().sort(function(a,b){ return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
+  ss.forEach(function(s){
+    sesiRows.push([s.date, hostName(s.hostId), accountName(s.accountId), s.hours, s.turnover, sessionBonus(s.turnover)]);
+  });
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rekapRows), 'Rekap');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sesiRows), 'Rincian Sesi');
+  XLSX.writeFile(wb, 'Rekap-Gaji-Host-' + pad2(p.m) + '-' + p.y + '.xlsx');
+}
+
+/* --- Host & Akun --- */
+function renderMaster(){
+  var hl = document.getElementById('hostList');
+  if (state.hosts.length === 0){
+    hl.innerHTML = '<p class="muted">Belum ada host. Tambah host di atas.</p>';
+  } else {
+    hl.innerHTML = state.hosts.map(function(h){
+      return '<div class="session-item"><div class="row1"><span>' + escapeHtml(h.name) + '</span><span class="money">' + fmtRp(h.ratePerHour) + '/jam</span></div>'
+        + '<div class="actions"><button class="btn btn-secondary btn-small" data-edit-host="' + h.id + '">Ubah</button> <button class="btn btn-danger btn-small" data-del-host="' + h.id + '">Hapus</button></div></div>';
+    }).join('');
+  }
+  hl.querySelectorAll('[data-edit-host]').forEach(function(b){ b.addEventListener('click', function(){ editHost(b.getAttribute('data-edit-host')); }); });
+  hl.querySelectorAll('[data-del-host]').forEach(function(b){ b.addEventListener('click', function(){ deleteHost(b.getAttribute('data-del-host')); }); });
+  var al = document.getElementById('accountList');
+  al.innerHTML = state.accounts.map(function(a){
+    return '<div class="session-item"><div class="row1"><span>' + escapeHtml(a.name) + '</span></div>'
+      + '<div class="actions"><button class="btn btn-secondary btn-small" data-edit-acc="' + a.id + '">Ubah</button> <button class="btn btn-danger btn-small" data-del-acc="' + a.id + '">Hapus</button></div></div>';
+  }).join('');
+  al.querySelectorAll('[data-edit-acc]').forEach(function(b){ b.addEventListener('click', function(){ editAccount(b.getAttribute('data-edit-acc')); }); });
+  al.querySelectorAll('[data-del-acc]').forEach(function(b){ b.addEventListener('click', function(){ deleteAccount(b.getAttribute('data-del-acc')); }); });
+}
+function onSaveHost(e){
+  e.preventDefault();
+  var name = document.getElementById('hName').value.trim();
+  var rate = parseNum(document.getElementById('hRate').value);
+  var editId = document.getElementById('hEditId').value;
+  if (!name){ alert('Isi nama host.'); return; }
+  if (isNaN(rate) || rate <= 0){ alert('Tarif per jam harus angka lebih dari 0.'); return; }
+  rate = Math.round(rate);
+  if (editId){
+    var h = hostById(state, editId);
+    if (h){ h.name = name; h.ratePerHour = rate; }
+  } else {
+    state.hosts.push({ id: uid(), name: name, ratePerHour: rate });
+  }
+  saveState();
+  cancelEditHost();
+  renderAll();
+}
+function editHost(id){
+  var h = hostById(state, id);
+  if (!h) return;
+  document.getElementById('hName').value = h.name;
+  document.getElementById('hRate').value = h.ratePerHour;
+  document.getElementById('hEditId').value = id;
+  document.getElementById('hostSaveBtn').textContent = 'Simpan Perubahan';
+  document.getElementById('hostCancelBtn').style.display = 'inline-block';
+  document.getElementById('hName').focus();
+}
+function cancelEditHost(){
+  document.getElementById('hName').value = '';
+  document.getElementById('hRate').value = '';
+  document.getElementById('hEditId').value = '';
+  document.getElementById('hostSaveBtn').textContent = 'Tambah Host';
+  document.getElementById('hostCancelBtn').style.display = 'none';
+}
+function deleteHost(id){
+  if (state.sessions.some(function(s){ return s.hostId===id; })){
+    alert('Host ini masih punya sesi. Hapus sesi host ini dulu sebelum menghapus host.');
+    return;
+  }
+  if (!confirm('Hapus host ini?')) return;
+  state.hosts = state.hosts.filter(function(h){ return h.id!==id; });
+  saveState();
+  renderAll();
+}
+function onSaveAccount(e){
+  e.preventDefault();
+  var name = document.getElementById('aName').value.trim();
+  var editId = document.getElementById('aEditId').value;
+  if (!name){ alert('Isi nama akun.'); return; }
+  if (editId){
+    var a = accountById(state, editId);
+    if (a){ a.name = name; }
+  } else {
+    state.accounts.push({ id: uid(), name: name });
+  }
+  saveState();
+  cancelEditAccount();
+  renderAll();
+}
+function editAccount(id){
+  var a = accountById(state, id);
+  if (!a) return;
+  document.getElementById('aName').value = a.name;
+  document.getElementById('aEditId').value = id;
+  document.getElementById('accountSaveBtn').textContent = 'Simpan Perubahan';
+  document.getElementById('accountCancelBtn').style.display = 'inline-block';
+  document.getElementById('aName').focus();
+}
+function cancelEditAccount(){
+  document.getElementById('aName').value = '';
+  document.getElementById('aEditId').value = '';
+  document.getElementById('accountSaveBtn').textContent = 'Tambah Akun';
+  document.getElementById('accountCancelBtn').style.display = 'none';
+}
+function deleteAccount(id){
+  if (state.accounts.length <= 1){
+    alert('Minimal harus ada 1 akun.');
+    return;
+  }
+  if (state.sessions.some(function(s){ return s.accountId===id; })){
+    alert('Akun ini masih dipakai di sesi. Hapus sesi akun ini dulu sebelum menghapus akun.');
+    return;
+  }
+  if (!confirm('Hapus akun ini?')) return;
+  state.accounts = state.accounts.filter(function(a){ return a.id!==id; });
+  saveState();
+  renderAll();
+}
+
+/* --- Init --- */
+function initUI(){
+  var now = new Date();
+  ui.calY = now.getFullYear();
+  ui.calM = now.getMonth() + 1;
+  document.querySelectorAll('#tabs button').forEach(function(b){
+    b.addEventListener('click', function(){ showTab(b.getAttribute('data-tab')); });
+  });
+  document.getElementById('fDate').value = todayStr();
+  document.getElementById('fTurnover').addEventListener('input', updateBonusPreview);
+  document.getElementById('sessionForm').addEventListener('submit', onSaveSession);
+  document.getElementById('cancelEditBtn').addEventListener('click', cancelEditSession);
+  document.getElementById('calPrev').addEventListener('click', function(){ shiftCal(-1); });
+  document.getElementById('calNext').addEventListener('click', function(){ shiftCal(1); });
+  document.getElementById('poHost').addEventListener('change', renderPerOrang);
+  document.getElementById('poMonth').addEventListener('change', renderPerOrang);
+  document.getElementById('poMonth').value = monthStr(now.getFullYear(), now.getMonth()+1);
+  document.getElementById('rkMonth').addEventListener('change', renderRekap);
+  document.getElementById('rkMonth').value = monthStr(now.getFullYear(), now.getMonth()+1);
+  document.getElementById('btnExcel').addEventListener('click', downloadExcel);
+  document.getElementById('hostForm').addEventListener('submit', onSaveHost);
+  document.getElementById('hostCancelBtn').addEventListener('click', cancelEditHost);
+  document.getElementById('accountForm').addEventListener('submit', onSaveAccount);
+  document.getElementById('accountCancelBtn').addEventListener('click', cancelEditAccount);
+  document.getElementById('slipModal').addEventListener('click', function(e){ if (e.target === this) this.classList.remove('open'); });
+  renderAll();
+}
+if (typeof document !== 'undefined'){
+  if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', initUI); }
+  else { initUI(); }
+}
+</script>
+</body>
+</html>
