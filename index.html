@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Gaji Host Live</title>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root{
   --primary:#4f46e5; --primary-dark:#3730a3; --bg:#f1f5f9; --card:#ffffff;
@@ -78,6 +81,17 @@ tr.total-row td{font-weight:800;background:#f8fafc}
 .slip h2{text-align:center;margin:0 0 2px}
 .slip .sub{text-align:center;color:var(--muted);font-size:13px;margin-bottom:12px}
 .slip table td:first-child{color:var(--muted)}
+.login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-card{background:#fff;border:1px solid var(--border);border-radius:16px;max-width:440px;width:100%;padding:28px 24px;text-align:center;box-shadow:0 4px 24px rgba(15,23,42,.08)}
+.login-card h1{margin:0 0 6px;font-size:22px}
+.login-card .sub{color:var(--muted);font-size:14px;margin:0 0 20px}
+.google-btn{display:inline-flex;align-items:center;gap:10px;background:#fff;border:1px solid #dadce0;border-radius:8px;padding:11px 20px;font-size:15px;font-weight:600;color:#1f1f1f;cursor:pointer}
+.google-btn:hover{background:#f8f9fa}
+.google-btn .g{font-size:19px;font-weight:800;color:#4285F4}
+.header-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.header-user{font-size:12px;text-align:right;white-space:nowrap}
+.header-user button{background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.55);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600;cursor:pointer;margin-top:4px}
+.sync-status{font-size:12px;opacity:.85;margin-top:4px}
 @media print{
   body > *:not(#slipModal){display:none !important}
   #slipModal{position:static;background:none;padding:0}
@@ -87,9 +101,27 @@ tr.total-row td{font-weight:800;background:#f8fafc}
 </style>
 </head>
 <body>
+<div id="loginScreen" class="login-screen">
+  <div class="login-card">
+    <h1>Gaji Host Live</h1>
+    <p class="sub">Hitung gaji host live TikTok — pokok, uang makan, dan bonus omset.<br/>Login dulu dengan akun Google kamu. Datamu tersimpan di Google Sheet milikmu sendiri.</p>
+    <button class="google-btn" id="btnGoogleLogin" type="button"><span class="g">G</span> Login dengan Google</button>
+    <p class="muted" id="loginMsg" style="margin-top:14px"></p>
+  </div>
+</div>
+<div id="appShell" style="display:none">
 <header>
-  <h1>Gaji Host Live</h1>
-  <p>Hitung gaji host live TikTok — pokok, uang makan, dan bonus omset</p>
+  <div class="header-row">
+    <div>
+      <h1>Gaji Host Live</h1>
+      <p>Hitung gaji host live TikTok — pokok, uang makan, dan bonus omset</p>
+      <p class="sync-status" id="syncStatus"></p>
+    </div>
+    <div class="header-user">
+      <div id="userEmail"></div>
+      <button id="btnLogout" type="button">Keluar</button>
+    </div>
+  </div>
 </header>
 <nav class="tabs" id="tabs">
   <button data-tab="sesi" class="active">Catat Sesi</button>
@@ -164,6 +196,9 @@ tr.total-row td{font-weight:800;background:#f8fafc}
       <label for="poMonth">Bulan</label>
       <input type="month" id="poMonth" />
       <div class="stat-grid" id="poSummary" style="margin-top:14px"></div>
+      <div class="modal-actions" style="margin-top:12px">
+        <button class="btn btn-secondary" id="btnCopyPerson">Salin Rekap Orang Ini</button>
+      </div>
     </div>
     <div class="card">
       <h2>Rincian per Tanggal</h2>
@@ -179,6 +214,16 @@ tr.total-row td{font-weight:800;background:#f8fafc}
       <div class="table-wrap" style="margin-top:12px"><table id="rkTable"></table></div>
       <div class="modal-actions" style="margin-top:12px">
         <button class="btn" id="btnExcel">Unduh Excel (.xlsx)</button>
+        <button class="btn btn-secondary" id="btnCopyMonth">Salin Rekap Bulanan</button>
+      </div>
+      <div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">
+        <label for="pdfWeek">Minggu (untuk PDF mingguan)</label>
+        <input type="week" id="pdfWeek" />
+        <div class="modal-actions" style="margin-top:10px">
+          <button class="btn btn-secondary" id="btnPdfWeek">Unduh PDF Mingguan</button>
+          <button class="btn btn-secondary" id="btnPdfMonth">Unduh PDF Bulanan</button>
+        </div>
+        <p class="muted">PDF mingguan: Senin–Minggu pada minggu yang dipilih. PDF bulanan: sebulan penuh pada bulan di atas.</p>
       </div>
     </div>
     <div class="card">
@@ -216,12 +261,21 @@ tr.total-row td{font-weight:800;background:#f8fafc}
   </section>
 
 </main>
+</div>
 <div class="modal-overlay" id="slipModal"><div class="modal-card slip" id="slipContent"></div></div>
 
 <script>
 'use strict';
 /* ===== Konstanta aturan ===== */
 var LS_KEY = 'gaji-host-live-v1';
+/* ===== Login Google — ISI CLIENT ID DI SINI ===== */
+/* Buat OAuth Client ID (tipe "Web application") di Google Cloud Console,
+   lalu tempel di bawah ini. Biarkan placeholder sampai Client ID dibuat. */
+var GOOGLE_CLIENT_ID = '34408679942-th9b4cerrl2j7gb0bv1nl8nl7gnfg5v9.apps.googleusercontent.com';
+var SHEET_TITLE = 'Gaji Host Live';
+var SHEET_ID_MAP_KEY = 'gaji-host-live-sheets';
+var SHEET_LAST_EMAIL_KEY = 'gaji-host-live-last-email';
+var SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 var MEAL_MIN_HOURS = 6;
 var MEAL_AMOUNT = 10000;
 var BONUS_MIN_TURNOVER = 5000000;
@@ -273,7 +327,11 @@ function loadState(){
   }catch(e){ return defaultState(); }
 }
 var state = loadState();
-function saveState(){ try{ if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+function saveStateLocalOnly(){ try{ if (typeof localStorage !== 'undefined') localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+function saveState(){
+  saveStateLocalOnly();
+  scheduleSync();
+}
 
 /* ===== Perhitungan (fungsi murni — bisa diuji) ===== */
 function hostById(st,id){ return st.hosts.find(function(x){return x.id===id;}) || null; }
@@ -560,9 +618,12 @@ function renderCalDetail(dateStr){
       html += '</div>';
     });
     html += '<p style="font-weight:700">Total hari itu: <span class="money">' + fmtRp(dt.total) + '</span></p>';
+    html += '<div class="modal-actions" style="margin-top:10px"><button class="btn btn-secondary" id="btnCopyDay">Salin Rekap Harian</button></div>';
   }
   document.getElementById('calDetail').innerHTML = html;
   card.style.display = 'block';
+  var copyBtn = document.getElementById('btnCopyDay');
+  if (copyBtn){ copyBtn.addEventListener('click', function(){ copyText(buildDailyText(dateStr), copyBtn); }); }
 }
 
 /* --- Per Orang --- */
@@ -631,12 +692,19 @@ function renderRekap(){
     html += '<tr><td colspan="9" class="muted">Belum ada host. Tambah host di menu Host &amp; Akun.</td></tr>';
   }
   rows.forEach(function(r){
-    html += '<tr><td>' + escapeHtml(r.host.name) + '</td><td class="num money">' + fmtRp(r.host.ratePerHour) + '</td><td class="num">' + fmtHours(r.calc.hours) + '</td><td class="num money">' + fmtRp(r.calc.base) + '</td><td class="num">' + r.calc.mealDays + '</td><td class="num money">' + fmtRp(r.calc.meal) + '</td><td class="num money">' + fmtRp(r.calc.bonus) + '</td><td class="num money"><strong>' + fmtRp(r.calc.total) + '</strong></td><td><button class="btn btn-secondary btn-small" data-slip="' + r.host.id + '">Slip Gaji</button></td></tr>';
+    html += '<tr><td>' + escapeHtml(r.host.name) + '</td><td class="num money">' + fmtRp(r.host.ratePerHour) + '</td><td class="num">' + fmtHours(r.calc.hours) + '</td><td class="num money">' + fmtRp(r.calc.base) + '</td><td class="num">' + r.calc.mealDays + '</td><td class="num money">' + fmtRp(r.calc.meal) + '</td><td class="num money">' + fmtRp(r.calc.bonus) + '</td><td class="num money"><strong>' + fmtRp(r.calc.total) + '</strong></td><td><button class="btn btn-secondary btn-small" data-slip="' + r.host.id + '">Slip Gaji</button> <button class="btn btn-secondary btn-small" data-copy-person="' + r.host.id + '">Salin</button></td></tr>';
   });
   html += '<tr class="total-row"><td>TOTAL</td><td></td><td class="num">' + fmtHours(tot.hours) + '</td><td class="num money">' + fmtRp(tot.base) + '</td><td class="num">' + tot.mealDays + '</td><td class="num money">' + fmtRp(tot.meal) + '</td><td class="num money">' + fmtRp(tot.bonus) + '</td><td class="num money">' + fmtRp(tot.total) + '</td><td></td></tr></tbody>';
   document.getElementById('rkTable').innerHTML = html;
   document.querySelectorAll('#rkTable [data-slip]').forEach(function(b){
     b.addEventListener('click', function(){ openSlip(b.getAttribute('data-slip')); });
+  });
+  document.querySelectorAll('#rkTable [data-copy-person]').forEach(function(b){
+    b.addEventListener('click', function(){
+      var mk = document.getElementById('rkMonth').value;
+      var p = parseMonthKey(mk);
+      copyText(buildPersonText(b.getAttribute('data-copy-person'), p.y, p.m), b);
+    });
   });
   var accHtml = '<thead><tr><th>Akun</th><th class="num">Total Omset</th><th class="num">Gaji Pokok</th><th class="num">Uang Makan</th><th class="num">Bonus</th><th class="num">Total</th></tr></thead><tbody>';
   var atot = { turnover: 0, base: 0, meal: 0, bonus: 0, total: 0 };
@@ -682,6 +750,81 @@ function openSlip(hostId){
   document.getElementById('slipContent').innerHTML = html;
   document.getElementById('slipModal').classList.add('open');
   document.getElementById('slipCloseBtn').addEventListener('click', function(){ document.getElementById('slipModal').classList.remove('open'); });
+}
+
+/* --- Salin Rekap (teks WA) --- */
+function buildDailyText(dateStr){
+  var dt = dayTotalAll(state, dateStr);
+  var lines = [];
+  lines.push('📋 REKAP GAJI HARIAN — ' + fmtDateID(dateStr));
+  lines.push('');
+  if (dt.perHost.length === 0){
+    lines.push('Tidak ada sesi hari ini.');
+  } else {
+    dt.perHost.forEach(function(ph){
+      lines.push('• ' + ph.host.name + ' — ' + fmtHours(ph.hours));
+      lines.push('Pokok ' + fmtRp(ph.base) + ' | Makan ' + fmtRp(ph.meal) + ' | Bonus ' + fmtRp(ph.bonus));
+      lines.push('Total: ' + fmtRp(ph.total));
+      lines.push('');
+    });
+  }
+  lines.push('💰 TOTAL HARI INI: ' + fmtRp(dt.total));
+  return lines.join('\n');
+}
+function buildMonthlyText(y, m){
+  var lines = [];
+  lines.push('📋 REKAP GAJI BULANAN — ' + MONTH_NAMES[m-1] + ' ' + y);
+  lines.push('');
+  var tot = 0, any = false;
+  state.hosts.forEach(function(h){
+    var c = hostMonthCalc(state, h.id, y, m);
+    if (c.hours === 0 && c.total === 0) return;
+    any = true;
+    lines.push('• ' + h.name + ' — ' + fmtHours(c.hours));
+    lines.push('Pokok ' + fmtRp(c.base) + ' | Makan (' + c.mealDays + ' hari) ' + fmtRp(c.meal) + ' | Bonus ' + fmtRp(c.bonus));
+    lines.push('Total: ' + fmtRp(c.total));
+    lines.push('');
+    tot += c.total;
+  });
+  if (!any) lines.push('Belum ada sesi di bulan ini.');
+  lines.push('💰 TOTAL BULAN INI: ' + fmtRp(tot));
+  return lines.join('\n');
+}
+function buildPersonText(hostId, y, m){
+  var h = hostById(state, hostId);
+  if (!h) return '';
+  var c = hostMonthCalc(state, hostId, y, m);
+  var lines = [];
+  lines.push('📋 REKAP GAJI — ' + h.name + ' (' + MONTH_NAMES[m-1] + ' ' + y + ')');
+  lines.push('Tarif: ' + fmtRp(h.ratePerHour) + '/jam');
+  lines.push('Total Jam: ' + fmtHours(c.hours));
+  lines.push('Gaji Pokok: ' + fmtRp(c.base));
+  lines.push('Uang Makan (' + c.mealDays + ' hari): ' + fmtRp(c.meal));
+  lines.push('Bonus: ' + fmtRp(c.bonus));
+  lines.push('Total Gaji: ' + fmtRp(c.total));
+  return lines.join('\n');
+}
+function fallbackCopy(txt){
+  var ta = document.createElement('textarea');
+  ta.value = txt;
+  ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch(e){}
+  document.body.removeChild(ta);
+}
+function copyText(txt, btn){
+  function done(){
+    if (!btn) return;
+    var t = btn.textContent;
+    btn.textContent = 'Tersalin ✓';
+    setTimeout(function(){ btn.textContent = t; }, 2000);
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(function(){ fallbackCopy(txt); done(); });
+  } else {
+    fallbackCopy(txt); done();
+  }
 }
 
 /* --- Unduh Excel --- */
@@ -824,6 +967,398 @@ function deleteAccount(id){
   renderAll();
 }
 
+/* ===== Login Google (Google Identity Services) + Google Sheet ===== */
+var auth = { accessToken: null, email: null, expiresAt: 0, tokenClient: null };
+var sheetId = null;
+var sheetReady = false;
+var syncTimer = null;
+var silentAttempt = false;
+var consentRetryDone = false;
+
+function setLoginMsg(msg){ var el = document.getElementById('loginMsg'); if (el) el.textContent = msg || ''; }
+function setSyncStatus(msg){ var el = document.getElementById('syncStatus'); if (el) el.textContent = msg || ''; }
+
+function getStoredSheetMap(){
+  try { var raw = localStorage.getItem(SHEET_ID_MAP_KEY); return raw ? JSON.parse(raw) : {}; } catch(e){ return {}; }
+}
+function getStoredSheetId(email){ return getStoredSheetMap()[email] || null; }
+function storeSheetId(email, id){
+  var m = getStoredSheetMap(); m[email] = id;
+  try { localStorage.setItem(SHEET_ID_MAP_KEY, JSON.stringify(m)); } catch(e){}
+}
+function clearStoredSheetId(email){
+  var m = getStoredSheetMap(); delete m[email];
+  try { localStorage.setItem(SHEET_ID_MAP_KEY, JSON.stringify(m)); } catch(e){}
+}
+
+function initTokenClient(){
+  if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) return null;
+  if (auth.tokenClient) return auth.tokenClient;
+  auth.tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GOOGLE_CLIENT_ID,
+    scope: SCOPES,
+    callback: function(resp){
+      if (resp && resp.access_token){ onAccessToken(resp); }
+      else if (!silentAttempt){ setLoginMsg('Login dibatalkan atau gagal. Coba lagi.'); }
+      silentAttempt = false;
+    },
+    error_callback: function(){
+      if (silentAttempt){ silentAttempt = false; return; }
+      if (!consentRetryDone){ consentRetryDone = true; requestToken('consent'); return; }
+      setLoginMsg('Login Google gagal atau dibatalkan. Coba lagi.');
+    }
+  });
+  return auth.tokenClient;
+}
+function requestToken(promptMode){
+  try { auth.tokenClient.requestAccessToken({ prompt: promptMode }); }
+  catch(e){ setLoginMsg('Tidak bisa membuka login Google. Coba lagi.'); }
+}
+function doLogin(){
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID === 'PASTE_OAUTH_CLIENT_ID_HERE'){
+    setLoginMsg('Client ID Google belum diisi. Minta pembuat aplikasi mengisi GOOGLE_CLIENT_ID di file aplikasi.');
+    return;
+  }
+  if (!initTokenClient()){
+    setLoginMsg('Google Sign-In gagal dimuat. Periksa koneksi internet, lalu muat ulang halaman.');
+    return;
+  }
+  silentAttempt = false;
+  consentRetryDone = false;
+  setLoginMsg('Membuka login Google…');
+  requestToken('');
+}
+function trySilentLogin(){
+  var lastEmail = null;
+  try { lastEmail = localStorage.getItem(SHEET_LAST_EMAIL_KEY); } catch(e){}
+  if (!lastEmail) return false;
+  if (!GOOGLE_CLIENT_ID || GOOGLE_CLIENT_ID === 'PASTE_OAUTH_CLIENT_ID_HERE') return false;
+  if (!initTokenClient()) return false;
+  silentAttempt = true;
+  consentRetryDone = true;
+  try { auth.tokenClient.requestAccessToken({ prompt: '' }); return true; }
+  catch(e){ silentAttempt = false; return false; }
+}
+function onAccessToken(resp){
+  auth.accessToken = resp.access_token;
+  auth.expiresAt = Date.now() + (parseInt(resp.expires_in || '3600', 10) * 1000);
+  fetch('https://oauth2.googleapis.com/tokeninfo?access_token=' + encodeURIComponent(auth.accessToken))
+    .then(function(r){ if (!r.ok) throw new Error('tokeninfo gagal'); return r.json(); })
+    .then(function(t){
+      auth.email = t.email || '';
+      try { localStorage.setItem(SHEET_LAST_EMAIL_KEY, auth.email); } catch(e){}
+      afterLogin();
+    })
+    .catch(function(){ setLoginMsg('Login berhasil, tetapi email tidak bisa dibaca. Coba keluar lalu login lagi.'); });
+}
+function afterLogin(){
+  document.getElementById('userEmail').textContent = auth.email || '';
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appShell').style.display = 'block';
+  setSyncStatus('Menghubungkan ke Google Sheet…');
+  ensureSheetAndLoad().then(function(){
+    renderAll();
+    setSyncStatus(sheetReady ? 'Tersimpan di Google Sheet ✓' : 'Offline — data tersimpan lokal');
+  }).catch(function(){
+    setSyncStatus('Gagal memuat Google Sheet — memakai data lokal');
+    renderAll();
+  });
+}
+function logout(){
+  if (auth.accessToken && typeof google !== 'undefined' && google.accounts && google.accounts.oauth2){
+    try { google.accounts.oauth2.revoke(auth.accessToken, function(){}); } catch(e){}
+  }
+  auth.accessToken = null; auth.email = null; auth.expiresAt = 0;
+  sheetId = null; sheetReady = false;
+  state = defaultState();
+  saveStateLocalOnly();
+  setLoginMsg('');
+  document.getElementById('appShell').style.display = 'none';
+  document.getElementById('loginScreen').style.display = 'flex';
+}
+
+/* --- Google Sheets API --- */
+function gapiFetch(url, options){
+  options = options || {};
+  options.headers = options.headers || {};
+  options.headers['Authorization'] = 'Bearer ' + auth.accessToken;
+  if (options.body && typeof options.body !== 'string') options.body = JSON.stringify(options.body);
+  if (options.body && !options.headers['Content-Type']) options.headers['Content-Type'] = 'application/json';
+  return fetch(url, options);
+}
+function sheetValuesGet(range){
+  return gapiFetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/' + encodeURIComponent(range))
+    .then(function(r){ if (!r.ok) throw new Error('Baca sheet gagal (' + r.status + ')'); return r.json(); });
+}
+function sheetValuesUpdate(range, values){
+  return gapiFetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/' + encodeURIComponent(range) + '?valueInputOption=USER_ENTERED', {
+    method: 'PUT',
+    body: { range: range, majorDimension: 'ROWS', values: values }
+  }).then(function(r){ if (!r.ok) throw new Error('Tulis sheet gagal (' + r.status + ')'); return r.json(); });
+}
+function sheetValuesClear(range){
+  return gapiFetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/' + encodeURIComponent(range) + ':clear', {
+    method: 'POST', body: {}
+  }).then(function(r){ if (!r.ok) throw new Error('Bersihkan sheet gagal (' + r.status + ')'); return r.json(); });
+}
+function ensureSheetAndLoad(){
+  var stored = auth.email ? getStoredSheetId(auth.email) : null;
+  var chain = Promise.resolve();
+  if (stored){
+    sheetId = stored;
+    chain = sheetValuesGet('Host!A1:B1').then(function(){ /* sheet masih ada */ }).catch(function(){
+      sheetId = null;
+      if (auth.email) clearStoredSheetId(auth.email);
+    });
+  }
+  return chain.then(function(){
+    if (sheetId) return loadFromSheet();
+    var q = "name = '" + SHEET_TITLE + "' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false";
+    return gapiFetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) + '&fields=files(id,name)&pageSize=5')
+      .then(function(r){ if (!r.ok) throw new Error('Cari sheet gagal (' + r.status + ')'); return r.json(); })
+      .then(function(j){
+        if (j.files && j.files.length > 0){
+          sheetId = j.files[0].id;
+          if (auth.email) storeSheetId(auth.email, sheetId);
+          return loadFromSheet();
+        }
+        return createSheet().then(function(){ return loadFromSheet(); });
+      });
+  });
+}
+function createSheet(){
+  return gapiFetch('https://sheets.googleapis.com/v4/spreadsheets', {
+    method: 'POST',
+    body: {
+      properties: { title: SHEET_TITLE },
+      sheets: [
+        { properties: { title: 'Host' } },
+        { properties: { title: 'Akun' } },
+        { properties: { title: 'Sesi' } }
+      ]
+    }
+  }).then(function(r){ if (!r.ok) throw new Error('Buat sheet gagal (' + r.status + ')'); return r.json(); })
+  .then(function(j){
+    sheetId = j.spreadsheetId;
+    if (auth.email) storeSheetId(auth.email, sheetId);
+    return sheetValuesUpdate('Host!A1:B1', [['Nama','Tarif per Jam']])
+      .then(function(){ return sheetValuesUpdate('Akun!A1:A1', [['Nama Akun']]); })
+      .then(function(){ return sheetValuesUpdate('Sesi!A1:F1', [['Tanggal','Host','Akun','Jam','Menit','Omset']]); });
+  });
+}
+function localHasData(){
+  return state.hosts.length > 0 || state.sessions.length > 0 || state.accounts.length > 1 ||
+    (state.accounts.length === 1 && state.accounts[0].name !== 'Dozer.Store25');
+}
+function loadFromSheet(){
+  return Promise.all([
+    sheetValuesGet('Host!A2:B200'),
+    sheetValuesGet('Akun!A2:A200'),
+    sheetValuesGet('Sesi!A2:F2000')
+  ]).then(function(results){
+    var hostRows = (results[0].values || []);
+    var accRows = (results[1].values || []);
+    var sesRows = (results[2].values || []);
+    var hasSheetData = hostRows.length > 0 || accRows.length > 0 || sesRows.length > 0;
+    if (hasSheetData){
+      state = stateFromSheet(hostRows, accRows, sesRows);
+      saveStateLocalOnly();
+      sheetReady = true;
+    } else if (localHasData()){
+      // Sheet masih kosong — unggah data lokal sekali saja
+      sheetReady = true;
+      return writeAllSheets();
+    } else {
+      state = defaultState();
+      saveStateLocalOnly();
+      sheetReady = true;
+      return writeAllSheets();
+    }
+  });
+}
+function stateFromSheet(hostRows, accRows, sesRows){
+  var st = { hosts: [], accounts: [], sessions: [] };
+  var hostIdByName = {};
+  hostRows.forEach(function(r){
+    var name = String(r[0] || '').trim();
+    if (!name) return;
+    var rate = parseNum(r[1]);
+    if (isNaN(rate)) rate = 0;
+    var id = uid();
+    hostIdByName[name] = id;
+    st.hosts.push({ id: id, name: name, ratePerHour: Math.round(rate) });
+  });
+  var accIdByName = {};
+  accRows.forEach(function(r){
+    var name = String(r[0] || '').trim();
+    if (!name) return;
+    var id = uid();
+    accIdByName[name] = id;
+    st.accounts.push({ id: id, name: name });
+  });
+  if (st.accounts.length === 0) st.accounts = defaultState().accounts;
+  sesRows.forEach(function(r){
+    var date = String(r[0] || '').trim();
+    var hName = String(r[1] || '').trim();
+    var aName = String(r[2] || '').trim();
+    if (!date || !hName) return;
+    var jam = parseNum(r[3]); if (isNaN(jam)) jam = 0;
+    var menit = parseNum(r[4]); if (isNaN(menit)) menit = 0;
+    var omset = parseNum(r[5]); if (isNaN(omset)) omset = 0;
+    var hostId = hostIdByName[hName];
+    if (!hostId){
+      hostId = uid();
+      hostIdByName[hName] = hostId;
+      st.hosts.push({ id: hostId, name: hName, ratePerHour: 0 });
+    }
+    var accId = accIdByName[aName];
+    if (!accId){
+      accId = uid();
+      accIdByName[aName] = accId;
+      st.accounts.push({ id: accId, name: aName || 'Dozer.Store25' });
+    }
+    st.sessions.push({ id: uid(), hostId: hostId, accountId: accId, date: date, hours: jam + menit / 60, turnover: Math.round(omset) });
+  });
+  return st;
+}
+function stateToSheetValues(){
+  var hostRows = [['Nama','Tarif per Jam']];
+  state.hosts.forEach(function(h){ hostRows.push([h.name, h.ratePerHour]); });
+  var accRows = [['Nama Akun']];
+  state.accounts.forEach(function(a){ accRows.push([a.name]); });
+  var sesRows = [['Tanggal','Host','Akun','Jam','Menit','Omset']];
+  state.sessions.forEach(function(s){
+    var totalMin = Math.round(Number(s.hours) * 60);
+    sesRows.push([s.date, hostName(s.hostId), accountName(s.accountId), Math.floor(totalMin / 60), totalMin % 60, s.turnover]);
+  });
+  return { hostRows: hostRows, accRows: accRows, sesRows: sesRows };
+}
+function writeAllSheets(){
+  if (!sheetId || !auth.accessToken) return Promise.resolve(false);
+  var v = stateToSheetValues();
+  setSyncStatus('Menyimpan ke Google Sheet…');
+  return sheetValuesClear('Host!A1:B200')
+    .then(function(){ return sheetValuesUpdate('Host!A1:B' + v.hostRows.length, v.hostRows); })
+    .then(function(){ return sheetValuesClear('Akun!A1:A200'); })
+    .then(function(){ return sheetValuesUpdate('Akun!A1:A' + v.accRows.length, v.accRows); })
+    .then(function(){ return sheetValuesClear('Sesi!A1:F2000'); })
+    .then(function(){ return sheetValuesUpdate('Sesi!A1:F' + v.sesRows.length, v.sesRows); })
+    .then(function(){ setSyncStatus('Tersimpan di Google Sheet ✓'); return true; })
+    .catch(function(){
+      setSyncStatus('Gagal menyimpan ke Sheet — data tetap tersimpan lokal');
+      return false;
+    });
+}
+function scheduleSync(){
+  if (!sheetReady || !sheetId || !auth.accessToken) return;
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(function(){ syncTimer = null; writeAllSheets(); }, 600);
+}
+
+/* ===== Unduh PDF (jsPDF + autotable) ===== */
+function mondayOfISOWeek(y, w){
+  var jan4 = new Date(y, 0, 4);
+  var dow = (jan4.getDay() + 6) % 7; // Senin = 0
+  var monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - dow + (w - 1) * 7);
+  return monday;
+}
+function dateToStr(d){ return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()); }
+function currentISOWeekStr(){
+  var now = new Date();
+  var dow = (now.getDay() + 6) % 7;
+  var thu = new Date(now); thu.setDate(now.getDate() - dow + 3);
+  var year = thu.getFullYear();
+  var jan4 = new Date(year, 0, 4);
+  var jan4dow = (jan4.getDay() + 6) % 7;
+  var week1Mon = new Date(jan4); week1Mon.setDate(jan4.getDate() - jan4dow);
+  var week = Math.round((thu - week1Mon) / (7 * 24 * 3600 * 1000)) + 1;
+  return year + '-W' + String(week).padStart(2, '0');
+}
+function hostRangeCalc(st, hostId, startStr, endStr){
+  var host = hostById(st, hostId);
+  var rate = host ? host.ratePerHour : 0;
+  var ss = st.sessions.filter(function(s){ return s.hostId===hostId && s.date >= startStr && s.date <= endStr; });
+  var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
+  var base = Math.round(rate * hours);
+  var dates = [];
+  ss.forEach(function(s){ if (dates.indexOf(s.date) === -1) dates.push(s.date); });
+  var mealDays = 0, meal = 0;
+  dates.forEach(function(d){
+    var dc = hostDayCalc(st, hostId, d);
+    if (dc.meal > 0){ mealDays++; meal += dc.meal; }
+  });
+  var bonus = ss.reduce(function(a,s){ return a + sessionBonus(s.turnover); }, 0);
+  return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
+}
+function buildPdf(title, subtitle, rows, totals, fileName){
+  if (typeof window.jspdf === 'undefined' || typeof window.jspdf.jsPDF === 'undefined'){
+    alert('Pustaka PDF (jsPDF) gagal dimuat. Periksa koneksi internet, lalu muat ulang halaman dan coba lagi.');
+    return;
+  }
+  var doc = new window.jspdf.jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+  doc.setFontSize(16);
+  doc.text(title, 40, 40);
+  doc.setFontSize(11);
+  doc.setTextColor(100);
+  doc.text(subtitle, 40, 58);
+  doc.setTextColor(0);
+  doc.autoTable({
+    startY: 72,
+    head: [['Host','Tarif/Jam','Total Jam','Gaji Pokok','Hari Makan','Uang Makan','Bonus','Total Gaji']],
+    body: rows,
+    foot: [totals],
+    styles: { fontSize: 10 },
+    headStyles: { fillColor: [79, 70, 229] },
+    footStyles: { fontStyle: 'bold' },
+    columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } }
+  });
+  doc.save(fileName);
+}
+function pdfRowsForRange(startStr, endStr){
+  var rows = [];
+  var tot = { hours: 0, base: 0, mealDays: 0, meal: 0, bonus: 0, total: 0 };
+  state.hosts.forEach(function(h){
+    var c = hostRangeCalc(state, h.id, startStr, endStr);
+    rows.push([h.name, fmtRp(h.ratePerHour), fmtHours(c.hours), fmtRp(c.base), String(c.mealDays), fmtRp(c.meal), fmtRp(c.bonus), fmtRp(c.total)]);
+    tot.hours += c.hours; tot.base += c.base; tot.mealDays += c.mealDays;
+    tot.meal += c.meal; tot.bonus += c.bonus; tot.total += c.total;
+  });
+  var totals = ['TOTAL', '', fmtHours(tot.hours), fmtRp(tot.base), String(tot.mealDays), fmtRp(tot.meal), fmtRp(tot.bonus), fmtRp(tot.total)];
+  return { rows: rows, totals: totals };
+}
+function downloadPdfWeek(){
+  var wk = document.getElementById('pdfWeek').value;
+  var monday;
+  if (wk){
+    var p = wk.split('-W');
+    monday = mondayOfISOWeek(parseInt(p[0], 10), parseInt(p[1], 10));
+  } else {
+    var now = new Date();
+    var dow = (now.getDay() + 6) % 7;
+    monday = new Date(now); monday.setDate(now.getDate() - dow);
+  }
+  var sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  var startStr = dateToStr(monday), endStr = dateToStr(sunday);
+  var r = pdfRowsForRange(startStr, endStr);
+  buildPdf('Rekap Gaji Mingguan', 'Periode: ' + fmtDateID(startStr) + ' – ' + fmtDateID(endStr), r.rows, r.totals, 'Rekap-Gaji-Mingguan-' + startStr + '.pdf');
+}
+function downloadPdfMonth(){
+  var mk = document.getElementById('rkMonth').value;
+  if (!mk){ alert('Pilih bulan dulu.'); return; }
+  var p = parseMonthKey(mk);
+  var rows = [];
+  var tot = { hours: 0, base: 0, mealDays: 0, meal: 0, bonus: 0, total: 0 };
+  state.hosts.forEach(function(h){
+    var c = hostMonthCalc(state, h.id, p.y, p.m);
+    rows.push([h.name, fmtRp(h.ratePerHour), fmtHours(c.hours), fmtRp(c.base), String(c.mealDays), fmtRp(c.meal), fmtRp(c.bonus), fmtRp(c.total)]);
+    tot.hours += c.hours; tot.base += c.base; tot.mealDays += c.mealDays;
+    tot.meal += c.meal; tot.bonus += c.bonus; tot.total += c.total;
+  });
+  var totals = ['TOTAL', '', fmtHours(tot.hours), fmtRp(tot.base), String(tot.mealDays), fmtRp(tot.meal), fmtRp(tot.bonus), fmtRp(tot.total)];
+  buildPdf('Rekap Gaji Bulanan', 'Periode: ' + MONTH_NAMES[p.m-1] + ' ' + p.y, rows, totals, 'Rekap-Gaji-Bulanan-' + pad2(p.m) + '-' + p.y + '.pdf');
+}
+
 /* --- Init --- */
 function initUI(){
   var now = new Date();
@@ -844,12 +1379,37 @@ function initUI(){
   document.getElementById('rkMonth').addEventListener('change', renderRekap);
   document.getElementById('rkMonth').value = monthStr(now.getFullYear(), now.getMonth()+1);
   document.getElementById('btnExcel').addEventListener('click', downloadExcel);
+  document.getElementById('btnGoogleLogin').addEventListener('click', doLogin);
+  document.getElementById('btnLogout').addEventListener('click', logout);
+  document.getElementById('btnPdfWeek').addEventListener('click', downloadPdfWeek);
+  document.getElementById('btnPdfMonth').addEventListener('click', downloadPdfMonth);
+  document.getElementById('pdfWeek').value = currentISOWeekStr();
+  document.getElementById('btnCopyMonth').addEventListener('click', function(){
+    var mk = document.getElementById('rkMonth').value;
+    if (!mk){ alert('Pilih bulan dulu.'); return; }
+    var p = parseMonthKey(mk);
+    copyText(buildMonthlyText(p.y, p.m), document.getElementById('btnCopyMonth'));
+  });
+  document.getElementById('btnCopyPerson').addEventListener('click', function(){
+    var hostId = document.getElementById('poHost').value;
+    var mk = document.getElementById('poMonth').value;
+    if (!hostId || !mk){ alert('Pilih host dan bulan dulu.'); return; }
+    var p = parseMonthKey(mk);
+    copyText(buildPersonText(hostId, p.y, p.m), document.getElementById('btnCopyPerson'));
+  });
   document.getElementById('hostForm').addEventListener('submit', onSaveHost);
   document.getElementById('hostCancelBtn').addEventListener('click', cancelEditHost);
   document.getElementById('accountForm').addEventListener('submit', onSaveAccount);
   document.getElementById('accountCancelBtn').addEventListener('click', cancelEditAccount);
   document.getElementById('slipModal').addEventListener('click', function(e){ if (e.target === this) this.classList.remove('open'); });
-  renderAll();
+  // Aplikasi hanya tampil setelah login Google. Coba login diam-diam bila
+  // sebelumnya sudah pernah login di peramban ini.
+  var silentStarted = false;
+  try { silentStarted = trySilentLogin(); } catch(e){}
+  if (!silentStarted){
+    document.getElementById('loginScreen').style.display = 'flex';
+    document.getElementById('appShell').style.display = 'none';
+  }
 }
 if (typeof document !== 'undefined'){
   if (document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', initUI); }
