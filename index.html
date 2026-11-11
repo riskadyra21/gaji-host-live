@@ -112,7 +112,7 @@ tr.total-row td{font-weight:800;background:#f8fafc}
     <h1>Gaji Host Live</h1>
     <p class="sub">Aplikasi penghitung gaji host live TikTok — gaji pokok, uang makan, dan bonus omset dihitung otomatis, dan tersimpan di Google Sheet milikmu sendiri.</p>
     <ul class="login-features">
-      <li>Hitung gaji otomatis: gaji pokok per jam, uang makan Rp10.000/hari bila total jam hari itu &ge; 6 jam, dan bonus <span id="loginBonusPct">0,5%</span> dari omset sesi &ge; Rp5.000.000.</li>
+      <li>Hitung gaji otomatis: gaji pokok per jam, uang makan Rp10.000/hari bila total jam hari itu &ge; 6 jam, dan bonus <span id="loginBonusPct">0,5%</span> dari total omset harian &ge; Rp5.000.000.</li>
       <li>Kalender dan rekap gaji bulanan per host dan per akun TikTok.</li>
       <li>Unduh rekap sebagai Excel (.xlsx) dan PDF mingguan atau bulanan.</li>
       <li>Data tersimpan di Google Sheet milikmu sendiri — bukan di server kami.</li>
@@ -168,12 +168,12 @@ tr.total-row td{font-weight:800;background:#f8fafc}
         </div>
         <label for="fTurnover">Omset Sesi (Rp)</label>
         <input type="number" id="fTurnover" min="0" step="1" placeholder="0" required />
-        <p class="muted" id="bonusPreview">Bonus sesi ini: Rp 0</p>
+        <p class="muted" id="bonusPreview">Bonus hari ini: —</p>
         <input type="hidden" id="fEditId" value="" />
         <button type="submit" class="btn" id="saveBtn">Simpan Sesi</button>
         <button type="button" class="btn btn-secondary" id="cancelEditBtn" style="display:none">Batal Ubah</button>
       </form>
-      <p class="muted" style="margin-top:10px">Bonus: omset &ge; Rp 5.000.000 &rarr; <span id="formBonusPct">0,5%</span> &times; omset. Di bawah itu bonus Rp 0. Uang makan Rp 10.000/hari bila total jam host hari itu &ge; 6 jam.</p>
+      <p class="muted" style="margin-top:10px">Bonus: total omset sehari &ge; Rp 5.000.000 &rarr; <span id="formBonusPct">0,5%</span> &times; total omset hari itu. Di bawah itu bonus Rp 0. Uang makan Rp 10.000/hari bila total jam host hari itu &ge; 6 jam.</p>
     </div>
     <div class="card">
       <h2>Sesi Terbaru</h2>
@@ -278,7 +278,7 @@ tr.total-row td{font-weight:800;background:#f8fafc}
       <form id="bonusForm">
         <label for="bonusPctInput">Persentase Bonus (%)</label>
         <input type="text" id="bonusPctInput" inputmode="decimal" placeholder="0,5" />
-        <p class="muted">Bonus per sesi = persentase &times; omset, bila omset sesi &ge; Rp 5.000.000. Di bawah itu bonus Rp 0. Berlaku untuk semua host.</p>
+        <p class="muted">Bonus per hari = persentase &times; total omset sehari, bila total omset hari itu &ge; Rp 5.000.000. Di bawah itu bonus Rp 0. Berlaku untuk semua host.</p>
         <button type="submit" class="btn" id="bonusSaveBtn">Simpan Persentase Bonus</button>
       </form>
     </div>
@@ -385,10 +385,6 @@ function sessionBonusWithPct(turnover, pct){
   pct = (typeof pct === 'number' && !isNaN(pct) && pct >= 0) ? pct : BONUS_RATE;
   return turnover >= BONUS_MIN_TURNOVER ? Math.round(turnover * pct) : 0;
 }
-/* Bonus memakai persen bonus yang sedang berlaku (untuk sesi baru / pratinjau). */
-function sessionBonus(turnover){
-  return sessionBonusWithPct(turnover, bonusPctOf(state));
-}
 /* Tarif yang dipakai sebuah sesi: snapshot sesi bila ada, kalau tidak tarif host saat ini. */
 function sessionRateOf(st, s){
   if (s && typeof s.rate === 'number' && !isNaN(s.rate) && s.rate > 0) return s.rate;
@@ -400,8 +396,23 @@ function sessionBonusPctOf(st, s){
   if (s && typeof s.bonusPct === 'number' && !isNaN(s.bonusPct) && s.bonusPct >= 0) return s.bonusPct;
   return bonusPctOf(st);
 }
-function sessionBonusOf(st, s){
-  return sessionBonusWithPct(s.turnover, sessionBonusPctOf(st, s));
+/* Total omset seorang host pada satu tanggal. */
+function hostDayTurnover(st, hostId, date){
+  return hostSessionsOn(st, hostId, date).reduce(function(a,s){ return a + Number(s.turnover); }, 0);
+}
+/* Persen bonus yang berlaku untuk satu hari: snapshot sesi TERAKHIR host itu pada
+   tanggal tersebut (persen yang berlaku di akhir hari); bila tidak ada snapshot,
+   pakai pengaturan persen bonus saat ini. */
+function hostDayBonusPct(st, hostId, date){
+  var ss = hostSessionsOn(st, hostId, date);
+  if (ss.length === 0) return bonusPctOf(st);
+  return sessionBonusPctOf(st, ss[ss.length-1]);
+}
+/* Bonus HARIAN per host: akumulasi omset semua sesi host itu pada tanggal tersebut;
+   bila total omset hari itu >= Rp 5.000.000, bonus = persen hari itu x total omset hari itu. */
+function hostDayBonus(st, hostId, date){
+  var total = hostDayTurnover(st, hostId, date);
+  return sessionBonusWithPct(total, hostDayBonusPct(st, hostId, date));
 }
 function fmtPct(pct){
   var v = Math.round(pct * 10000) / 100;
@@ -423,7 +434,7 @@ function hostDayCalc(st,hostId,date){
   var hours = ss.reduce(function(a,s){ return a + Number(s.hours); }, 0);
   var base = ss.reduce(function(a,s){ return a + Math.round(sessionRateOf(st,s) * Number(s.hours)); }, 0);
   var meal = hours >= MEAL_MIN_HOURS ? MEAL_AMOUNT : 0;
-  var bonus = ss.reduce(function(a,s){ return a + sessionBonusOf(st,s); }, 0);
+  var bonus = hostDayBonus(st, hostId, date);
   return { hours: hours, base: base, meal: meal, bonus: bonus, total: base + meal + bonus, sessions: ss };
 }
 function hostMonthCalc(st,hostId,y,m){
@@ -437,7 +448,8 @@ function hostMonthCalc(st,hostId,y,m){
     var dc = hostDayCalc(st,hostId,d);
     if (dc.meal > 0){ mealDays++; meal += dc.meal; }
   });
-  var bonus = ss.reduce(function(a,s){ return a + sessionBonusOf(st,s); }, 0);
+  var bonus = 0;
+  dates.forEach(function(d){ bonus += hostDayBonus(st, hostId, d); });
   return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
 }
 function hostPeriodCalc(st,hostId,startDateStr,endDateStr){
@@ -451,7 +463,8 @@ function hostPeriodCalc(st,hostId,startDateStr,endDateStr){
     var dc = hostDayCalc(st,hostId,d);
     if (dc.meal > 0){ mealDays++; meal += dc.meal; }
   });
-  var bonus = ss.reduce(function(a,s){ return a + sessionBonusOf(st,s); }, 0);
+  var bonus = 0;
+  dates.forEach(function(d){ bonus += hostDayBonus(st, hostId, d); });
   return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
 }
 function dayTotalAll(st,date){
@@ -470,22 +483,22 @@ function monthTotalAll(st,y,m){
 function accountMonthCalc(st,accountId,y,m){
   var ss = sessionsOfMonth(st,y,m).filter(function(s){ return s.accountId===accountId; });
   var turnover = ss.reduce(function(a,s){ return a + Number(s.turnover); }, 0);
-  var base = 0, bonus = 0;
+  var base = 0;
   ss.forEach(function(s){
     base += Math.round(sessionRateOf(st,s) * Number(s.hours));
-    bonus += sessionBonusOf(st,s);
   });
-  var meal = 0;
+  var meal = 0, bonus = 0;
   var seen = {};
   ss.forEach(function(s){
     var k = s.hostId + '|' + s.date;
     if (seen[k]) return;
     seen[k] = true;
     var dc = hostDayCalc(st,s.hostId,s.date);
-    if (dc.meal > 0){
-      var daySessions = st.sessions.filter(function(x){ return x.hostId===s.hostId && x.date===s.date; });
-      var first = daySessions[0];
-      if (first && first.accountId === accountId) meal += dc.meal;
+    var daySessions = st.sessions.filter(function(x){ return x.hostId===s.hostId && x.date===s.date; });
+    var first = daySessions[0];
+    if (first && first.accountId === accountId){
+      if (dc.meal > 0) meal += dc.meal;
+      bonus += dc.bonus;
     }
   });
   return { turnover: turnover, base: base, meal: meal, bonus: bonus, total: base + meal + bonus, sessionCount: ss.length };
@@ -548,12 +561,39 @@ function renderAll(){
 }
 
 /* --- Catat Sesi --- */
-function updateBonusPreview(){
+/* Pratinjau bonus HARIAN yang terakumulasi (termasuk sesi yang sedang diisi/diubah).
+   Mensimulasikan keadaan setelah disimpan: sesi yang diedit diganti di tempatnya
+   (posisinya tidak berubah), sesi baru ditambahkan di akhir. */
+function previewDayBonus(){
+  var hostId = document.getElementById('fHost').value;
+  var date = document.getElementById('fDate').value;
   var t = parseNum(document.getElementById('fTurnover').value);
+  if (!hostId || !date || isNaN(t) || t < 0) return null;
+  var editId = document.getElementById('fEditId').value;
+  var tmp = state.sessions.slice();
+  if (editId){
+    var idx = -1;
+    for (var i=0;i<tmp.length;i++){ if (tmp[i].id===editId){ idx=i; break; } }
+    if (idx >= 0){
+      var ns = {};
+      for (var k in tmp[idx]) ns[k] = tmp[idx][k];
+      ns.hostId = hostId; ns.date = date; ns.turnover = Math.round(t);
+      tmp[idx] = ns;
+    } else {
+      tmp.push({ id: '__preview__', hostId: hostId, accountId: '', date: date, hours: 0, turnover: Math.round(t), bonusPct: bonusPctOf(state) });
+    }
+  } else {
+    tmp.push({ id: '__preview__', hostId: hostId, accountId: '', date: date, hours: 0, turnover: Math.round(t), bonusPct: bonusPctOf(state) });
+  }
+  var tmpState = { hosts: state.hosts, accounts: state.accounts, sessions: tmp, bonusPct: state.bonusPct };
+  return { total: hostDayTurnover(tmpState, hostId, date), bonus: hostDayBonus(tmpState, hostId, date), pct: hostDayBonusPct(tmpState, hostId, date) };
+}
+function updateBonusPreview(){
   var el = document.getElementById('bonusPreview');
-  if (isNaN(t) || t < 0){ el.textContent = 'Bonus sesi ini: —'; return; }
-  var b = sessionBonus(Math.round(t));
-  el.textContent = 'Bonus sesi ini: ' + fmtRp(b) + (t >= BONUS_MIN_TURNOVER ? ' (omset ≥ Rp 5.000.000 → ' + fmtPct(bonusPctOf(state)) + ')' : ' (omset di bawah Rp 5.000.000)');
+  var pv = previewDayBonus();
+  if (!pv){ el.textContent = 'Bonus hari ini: —'; return; }
+  var date = document.getElementById('fDate').value;
+  el.textContent = 'Bonus hari ini: ' + fmtRp(pv.bonus) + ' (total omset ' + fmtDateID(date) + ': ' + fmtRp(pv.total) + (pv.total >= BONUS_MIN_TURNOVER ? ' → ' + fmtPct(pv.pct) : ' — di bawah Rp 5.000.000') + ')';
 }
 function onSaveSession(e){
   e.preventDefault();
@@ -628,7 +668,7 @@ function renderSessionList(){
   }).map(function(x){ return x.s; }).slice(0,20);
   if (list.length === 0){ el.innerHTML = '<p class="muted">Belum ada sesi. Catat sesi pertama di atas.</p>'; return; }
   el.innerHTML = list.map(function(s){
-    return '<div class="session-item"><div class="row1"><span>' + fmtDateID(s.date) + ' • ' + escapeHtml(hostName(s.hostId)) + '</span><span class="money">Bonus ' + fmtRp(sessionBonusOf(state,s)) + '</span></div>'
+    return '<div class="session-item"><div class="row1"><span>' + fmtDateID(s.date) + ' • ' + escapeHtml(hostName(s.hostId)) + '</span><span class="money">Bonus hari ini ' + fmtRp(hostDayBonus(state, s.hostId, s.date)) + '</span></div>'
       + '<div class="row2">' + escapeHtml(accountName(s.accountId)) + ' • ' + fmtHours(s.hours) + ' • Omset ' + fmtRp(s.turnover) + '</div>'
       + '<div class="actions"><button class="btn btn-secondary btn-small" data-edit-sesi="' + s.id + '">Ubah</button> <button class="btn btn-danger btn-small" data-del-sesi="' + s.id + '">Hapus</button></div></div>';
   }).join('');
@@ -694,7 +734,7 @@ function renderCalDetail(dateStr){
       html += '<div class="day-row" style="cursor:default"><div class="top"><span>' + escapeHtml(ph.host.name) + '</span><span class="money">' + fmtRp(ph.total) + '</span></div>'
         + '<div class="sub">' + fmtHours(ph.hours) + ' • Pokok ' + fmtRp(ph.base) + ' • Uang makan ' + fmtRp(ph.meal) + ' • Bonus ' + fmtRp(ph.bonus) + '</div>';
       ph.sessions.forEach(function(s){
-        html += '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + ', bonus ' + fmtRp(sessionBonusOf(state,s)) + '</div>';
+        html += '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) +  + '</div>';
       });
       html += '</div>';
     });
@@ -747,7 +787,7 @@ function renderPerOrang(){
       + '<div class="sub">' + fmtHours(dc.hours) + ' • Pokok ' + fmtRp(dc.base) + ' • Uang makan ' + fmtRp(dc.meal) + ' • Bonus ' + fmtRp(dc.bonus) + '</div>'
       + '<div class="day-detail" style="display:none">'
       + dc.sessions.map(function(s){
-          return '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) + ', bonus ' + fmtRp(sessionBonusOf(state,s)) + '</div>';
+          return '<div class="sess">• ' + escapeHtml(accountName(s.accountId)) + ' — ' + fmtHours(s.hours) + ', omset ' + fmtRp(s.turnover) +  + '</div>';
         }).join('')
       + '<div class="sess" style="font-weight:600">Total hari itu: ' + fmtRp(dc.total) + '</div>'
       + '</div></div>';
@@ -847,9 +887,9 @@ function openSlip(hostId){
   if (ss.length === 0){
     html += '<p class="muted">Belum ada sesi di bulan ini.</p>';
   } else {
-    html += '<table><thead><tr><th>Tanggal</th><th>Akun</th><th class="num">Jam</th><th class="num">Omset</th><th class="num">Bonus</th></tr></thead><tbody>';
+    html += '<table><thead><tr><th>Tanggal</th><th>Akun</th><th class="num">Jam</th><th class="num">Omset</th></tr></thead><tbody>';
     ss.forEach(function(s){
-      html += '<tr><td>' + fmtDateID(s.date) + '</td><td>' + escapeHtml(accountName(s.accountId)) + '</td><td class="num">' + fmtHours(s.hours) + '</td><td class="num money">' + fmtRp(s.turnover) + '</td><td class="num money">' + fmtRp(sessionBonusOf(state,s)) + '</td></tr>';
+      html += '<tr><td>' + fmtDateID(s.date) + '</td><td>' + escapeHtml(accountName(s.accountId)) + '</td><td class="num">' + fmtHours(s.hours) + '</td><td class="num money">' + fmtRp(s.turnover) + '</td></tr>';
     });
     html += '</tbody></table>';
   }
@@ -978,10 +1018,10 @@ function downloadExcel(){
     rekapRows.push([h.name, h.ratePerHour, c.hours, c.base, c.mealDays, c.meal, c.bonus, c.total]);
   });
   rekapRows.push(['TOTAL','',tot.hours,tot.base,tot.mealDays,tot.meal,tot.bonus,tot.total]);
-  var sesiRows = [['Tanggal','Host','Akun','Jam','Omset (Rp)','Bonus (Rp)']];
+  var sesiRows = [['Tanggal','Host','Akun','Jam','Omset (Rp)']];
   var ss = sessionsOfMonth(state, p.y, p.m).slice().sort(function(a,b){ return a.date < b.date ? -1 : (a.date > b.date ? 1 : 0); });
   ss.forEach(function(s){
-    sesiRows.push([s.date, hostName(s.hostId), accountName(s.accountId), s.hours, s.turnover, sessionBonusOf(state,s)]);
+    sesiRows.push([s.date, hostName(s.hostId), accountName(s.accountId), s.hours, s.turnover]);
   });
   var wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rekapRows), 'Rekap');
@@ -1557,7 +1597,8 @@ function hostRangeCalc(st, hostId, startStr, endStr){
     var dc = hostDayCalc(st, hostId, d);
     if (dc.meal > 0){ mealDays++; meal += dc.meal; }
   });
-  var bonus = ss.reduce(function(a,s){ return a + sessionBonusOf(st,s); }, 0);
+  var bonus = 0;
+  dates.forEach(function(d){ bonus += hostDayBonus(st, hostId, d); });
   return { hours: hours, base: base, mealDays: mealDays, meal: meal, bonus: bonus, total: base + meal + bonus };
 }
 function buildPdf(title, subtitle, rows, totals, fileName){
@@ -1638,6 +1679,8 @@ function initUI(){
   });
   document.getElementById('fDate').value = todayStr();
   document.getElementById('fTurnover').addEventListener('input', updateBonusPreview);
+  document.getElementById('fHost').addEventListener('change', updateBonusPreview);
+  document.getElementById('fDate').addEventListener('change', updateBonusPreview);
   document.getElementById('sessionForm').addEventListener('submit', onSaveSession);
   document.getElementById('cancelEditBtn').addEventListener('click', cancelEditSession);
   document.getElementById('calPrev').addEventListener('click', function(){ shiftCal(-1); });
